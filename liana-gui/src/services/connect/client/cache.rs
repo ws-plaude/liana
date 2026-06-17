@@ -17,16 +17,34 @@ pub struct ConnectCache {
 }
 
 impl ConnectCache {
-    /// Upsert tokens for the row matching `email`. Preserves the existing
-    /// `user_id` field — user_id stamping is handled separately by
-    /// `stamp_account_identity` (called from the login backfill path), so
-    /// this function does not need to know the user_id.
-    fn upsert_credential(&mut self, email: &str, tokens: AccessTokenResponse) {
-        if let Some(c) = self.accounts.iter_mut().find(|c| c.email == email) {
-            c.tokens = tokens;
+    /// Upsert tokens for the row matching `user_id`, then `email`. When `user_id`
+    /// is known (the caller has just spoken to the backend), stamp it onto the
+    /// row at write time, both for fresh inserts and to promote legacy rows that
+    /// still lack a user_id. Refresh callers that don't know the user_id pass
+    /// `None`; in that case the existing user_id is preserved.
+    fn upsert_credential(
+        &mut self,
+        user_id: Option<&str>,
+        email: &str,
+        tokens: AccessTokenResponse,
+    ) {
+        let row_pos = user_id
+            .and_then(|uid| {
+                self.accounts
+                    .iter()
+                    .position(|a| a.user_id.as_deref() == Some(uid))
+            })
+            .or_else(|| self.accounts.iter().position(|a| a.email == email));
+
+        if let Some(pos) = row_pos {
+            self.accounts[pos].email = email.to_string();
+            self.accounts[pos].tokens = tokens;
+            if let Some(uid) = user_id {
+                self.accounts[pos].user_id = Some(uid.to_string());
+            }
         } else {
             self.accounts.push(Account {
-                user_id: None,
+                user_id: user_id.map(|s| s.to_string()),
                 email: email.to_string(),
                 tokens,
             });
@@ -72,7 +90,7 @@ impl Account {
         })
     }
 
-    /// Lookup by email — used by the account-picker UI and as a migration
+    /// Lookup by email: used by the account-picker UI and as a migration
     /// fallback when `user_id` is not yet known locally. Safe because emails
     /// are unique per Liana-Connect account (enforced by the backend).
     pub fn from_cache_by_email(
@@ -89,6 +107,7 @@ pub async fn update_connect_cache(
     current_tokens: &AccessTokenResponse,
     client: &AuthClient,
     refresh: bool,
+    user_id: Option<&str>,
 ) -> Result<AccessTokenResponse, ConnectCacheError> {
     let email = &client.email;
     let mut path = network_dir.path().to_path_buf();
@@ -132,7 +151,20 @@ pub async fn update_connect_cache(
         ConnectCache::default()
     };
 
-    if let Some(c) = cache.accounts.iter().find(|cred| cred.email == *email) {
+    let cached = user_id
+        .and_then(|uid| {
+            cache
+                .accounts
+                .iter()
+                .find(|cred| cred.user_id.as_deref() == Some(uid))
+        })
+        .or_else(|| {
+            cache
+                .accounts
+                .iter()
+                .find(|cred| cred.email == *email && (user_id.is_none() || cred.user_id.is_none()))
+        });
+    if let Some(c) = cached {
         // Another process updated the tokens
         if current_tokens.expires_at < c.tokens.expires_at {
             tracing::debug!("Liana-Connect authentication tokens are up to date, nothing to do");
@@ -149,7 +181,7 @@ pub async fn update_connect_cache(
         current_tokens.clone()
     };
 
-    cache.upsert_credential(email, tokens.clone());
+    cache.upsert_credential(user_id, email, tokens.clone());
 
     let content = serde_json::to_vec_pretty(&cache).map_err(|e| {
         ConnectCacheError::WritingFile(format!("Failed to serialize settings: {e}"))
@@ -219,7 +251,7 @@ pub async fn filter_connect_cache(
     };
 
     cache.accounts.retain(|a| match &a.user_id {
-        Some(uid) => user_ids.contains(uid),
+        Some(uid) => user_ids.contains(uid) || legacy_emails.contains(&a.email),
         None => legacy_emails.contains(&a.email),
     });
 
@@ -249,7 +281,7 @@ pub async fn filter_connect_cache(
 /// and falls back to `lookup_email` (covers legacy rows that lack `user_id`).
 /// Also consolidates duplicates: after an OTP re-auth with a changed email
 /// `update_connect_cache` may insert a fresh email-keyed row alongside the
-/// existing user_id row — we keep the freshest tokens on a single canonical
+/// existing user_id row. We keep the freshest tokens on a single canonical
 /// row and drop the rest. No-op if no row matches.
 pub async fn stamp_account_identity(
     network_dir: &NetworkDirectory,
@@ -332,26 +364,33 @@ fn stamp_in_memory(
 ) -> bool {
     // Locate the canonical row: prefer the stable user_id, fall back to the
     // previous email so legacy (unstamped) rows can be promoted in place.
-    let canonical_pos = lookup_user_id
+    let canonical = lookup_user_id
         .and_then(|uid| {
             cache
                 .accounts
                 .iter()
                 .position(|a| a.user_id.as_deref() == Some(uid))
+                .map(|pos| (pos, true))
         })
-        .or_else(|| cache.accounts.iter().position(|a| a.email == lookup_email));
+        .or_else(|| {
+            cache
+                .accounts
+                .iter()
+                .position(|a| a.email == lookup_email)
+                .map(|pos| (pos, false))
+        });
 
-    let Some(canonical_pos) = canonical_pos else {
+    let Some((canonical_pos, found_by_user_id)) = canonical else {
         return false;
     };
 
     // Among all rows that could plausibly be the same user (matching the new
-    // identity, the previous email, or — when given — the previous user_id),
+    // identity, the previous email, or the previous user_id when given),
     // keep the freshest tokens.
     let is_candidate = |a: &Account| {
         a.user_id.as_deref() == Some(new_user_id)
             || a.email == new_email
-            || a.email == lookup_email
+            || (!found_by_user_id && a.email == lookup_email)
             || lookup_user_id.is_some_and(|uid| a.user_id.as_deref() == Some(uid))
     };
     let freshest_tokens = cache
@@ -381,7 +420,7 @@ fn stamp_in_memory(
     };
 
     // Drop any other rows that now collide on user_id or email with the
-    // canonical row. Only dedupe by user_id or by the *new* email — never by
+    // canonical row. Only dedupe by user_id or by the *new* email, never by
     // the previous email alone, which could belong to an unrelated user.
     let mut i = 0;
     cache.accounts.retain(|a| {
@@ -426,8 +465,19 @@ mod tests {
         }
     }
 
+    fn temp_network_dir(name: &str) -> NetworkDirectory {
+        let mut path = std::env::temp_dir();
+        path.push(format!(
+            "liana-connect-cache-test-{}-{name}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&path);
+        std::fs::create_dir_all(&path).unwrap();
+        NetworkDirectory::new(path)
+    }
+
     #[test]
-    fn upsert_replaces_tokens_for_existing_email() {
+    fn upsert_preserves_existing_user_id_when_caller_passes_none() {
         let mut cache = ConnectCache {
             accounts: vec![Account {
                 user_id: Some("uid-1".to_string()),
@@ -436,24 +486,129 @@ mod tests {
             }],
         };
 
-        cache.upsert_credential("a@x", tok(200));
+        cache.upsert_credential(None, "a@x", tok(200));
 
         assert_eq!(cache.accounts.len(), 1);
-        // Existing user_id is preserved — upsert no longer touches it.
         assert_eq!(cache.accounts[0].user_id.as_deref(), Some("uid-1"));
         assert_eq!(cache.accounts[0].tokens.expires_at, 200);
     }
 
     #[test]
-    fn upsert_inserts_with_no_user_id_for_new_email() {
-        let mut cache = ConnectCache { accounts: vec![] };
+    fn upsert_stamps_user_id_on_legacy_row() {
+        let mut cache = ConnectCache {
+            accounts: vec![Account {
+                user_id: None,
+                email: "a@x".to_string(),
+                tokens: tok(100),
+            }],
+        };
 
-        cache.upsert_credential("a@x", tok(200));
+        cache.upsert_credential(Some("uid-1"), "a@x", tok(200));
 
         assert_eq!(cache.accounts.len(), 1);
-        // user_id starts unset; backfill stamps it later via stamp_account_identity.
+        assert_eq!(cache.accounts[0].user_id.as_deref(), Some("uid-1"));
+        assert_eq!(cache.accounts[0].tokens.expires_at, 200);
+    }
+
+    #[test]
+    fn upsert_updates_by_user_id_when_email_changed() {
+        let mut cache = ConnectCache {
+            accounts: vec![Account {
+                user_id: Some("uid-1".to_string()),
+                email: "old@x".to_string(),
+                tokens: tok(100),
+            }],
+        };
+
+        cache.upsert_credential(Some("uid-1"), "new@x", tok(200));
+
+        assert_eq!(cache.accounts.len(), 1);
+        assert_eq!(cache.accounts[0].user_id.as_deref(), Some("uid-1"));
+        assert_eq!(cache.accounts[0].email, "new@x");
+        assert_eq!(cache.accounts[0].tokens.expires_at, 200);
+    }
+
+    #[test]
+    fn upsert_inserts_with_user_id_when_provided() {
+        let mut cache = ConnectCache { accounts: vec![] };
+
+        cache.upsert_credential(Some("uid-1"), "a@x", tok(200));
+
+        assert_eq!(cache.accounts.len(), 1);
+        assert_eq!(cache.accounts[0].user_id.as_deref(), Some("uid-1"));
+        assert_eq!(cache.accounts[0].email, "a@x");
+    }
+
+    #[test]
+    fn upsert_inserts_with_no_user_id_when_caller_lacks_it() {
+        let mut cache = ConnectCache { accounts: vec![] };
+
+        cache.upsert_credential(None, "a@x", tok(200));
+
+        assert_eq!(cache.accounts.len(), 1);
         assert!(cache.accounts[0].user_id.is_none());
         assert_eq!(cache.accounts[0].email, "a@x");
+    }
+
+    #[tokio::test]
+    async fn update_ignores_legacy_duplicate_when_user_id_matches() {
+        let network_dir = temp_network_dir("update-ignores-legacy-duplicate");
+        let mut path = network_dir.path().to_path_buf();
+        path.push(CONNECT_CACHE_FILENAME);
+        let cache = ConnectCache {
+            accounts: vec![
+                Account {
+                    user_id: None,
+                    email: "a@x".to_string(),
+                    tokens: tok(500),
+                },
+                Account {
+                    user_id: Some("uid-1".to_string()),
+                    email: "a@x".to_string(),
+                    tokens: tok(100),
+                },
+            ],
+        };
+        std::fs::write(&path, serde_json::to_vec_pretty(&cache).unwrap()).unwrap();
+        let client = AuthClient::new(
+            "http://127.0.0.1".to_string(),
+            "key".to_string(),
+            "a@x".to_string(),
+            "agent".to_string(),
+        );
+
+        let tokens = update_connect_cache(&network_dir, &tok(100), &client, false, Some("uid-1"))
+            .await
+            .unwrap();
+
+        assert_eq!(tokens.expires_at, 100);
+    }
+
+    #[tokio::test]
+    async fn filter_keeps_migrated_row_for_legacy_settings_entry() {
+        let network_dir = temp_network_dir("filter-keeps-migrated-row");
+        let mut path = network_dir.path().to_path_buf();
+        path.push(CONNECT_CACHE_FILENAME);
+        let cache = ConnectCache {
+            accounts: vec![Account {
+                user_id: Some("uid-1".to_string()),
+                email: "a@x".to_string(),
+                tokens: tok(100),
+            }],
+        };
+        std::fs::write(&path, serde_json::to_vec_pretty(&cache).unwrap()).unwrap();
+
+        filter_connect_cache(
+            &network_dir,
+            &HashSet::new(),
+            &HashSet::from(["a@x".to_string()]),
+        )
+        .await
+        .unwrap();
+
+        let cache = ConnectCache::from_file(&network_dir).unwrap();
+        assert_eq!(cache.accounts.len(), 1);
+        assert_eq!(cache.accounts[0].user_id.as_deref(), Some("uid-1"));
     }
 
     // Bug 1: settings already has user_id but the cache row is still legacy
@@ -542,5 +697,30 @@ mod tests {
         assert_eq!(cache.accounts.len(), 1);
         // The unrelated row is untouched.
         assert_eq!(cache.accounts[0].user_id.as_deref(), Some("other-uid"));
+    }
+
+    #[test]
+    fn stamp_does_not_take_tokens_from_previous_email_when_user_id_matches() {
+        let mut cache = ConnectCache {
+            accounts: vec![
+                Account {
+                    user_id: Some("uid-1".to_string()),
+                    email: "old@x".to_string(),
+                    tokens: tok(100),
+                },
+                Account {
+                    user_id: None,
+                    email: "old@x".to_string(),
+                    tokens: tok(500),
+                },
+            ],
+        };
+
+        let changed = stamp_in_memory(&mut cache, Some("uid-1"), "old@x", "uid-1", "new@x");
+
+        assert!(changed);
+        assert_eq!(cache.accounts[0].user_id.as_deref(), Some("uid-1"));
+        assert_eq!(cache.accounts[0].email, "new@x");
+        assert_eq!(cache.accounts[0].tokens.expires_at, 100);
     }
 }
