@@ -742,18 +742,29 @@ async fn connect_for_business(
                 .ok_or(login::Error::CredentialsMissing)?,
         }
     };
+    let user_id_for_refresh = if cached.user_id.as_deref() == user_id.as_deref() {
+        user_id.as_deref()
+    } else {
+        None
+    };
     let mut tokens = cached.tokens;
+    let cache_needs_verified_user =
+        tokens.expires_at < chrono::Utc::now().timestamp() && user_id_for_refresh.is_none();
 
     // Refresh if expired
     if tokens.expires_at < chrono::Utc::now().timestamp() {
-        tokens = connect_cache::update_connect_cache(
-            &network_dir,
-            &tokens,
-            &auth_client,
-            true,
-            user_id.as_deref(),
-        )
-        .await?;
+        tokens = if let Some(uid) = user_id_for_refresh {
+            connect_cache::update_connect_cache(
+                &network_dir,
+                &tokens,
+                &auth_client,
+                true,
+                Some(uid),
+            )
+            .await?
+        } else {
+            auth_client.refresh_token(&tokens.refresh_token).await?
+        };
     }
 
     // Connect to backend
@@ -762,7 +773,27 @@ async fn connect_for_business(
             .await
             .map_err(|e| login::Error::Unexpected(e.to_string()))?;
 
+    // Find the wallet
+    let wallet = client
+        .list_wallets()
+        .await
+        .map_err(|e| login::Error::Unexpected(e.to_string()))?
+        .into_iter()
+        .find(|w| w.id == wallet_id)
+        .ok_or_else(|| login::Error::Unexpected(format!("Wallet {wallet_id} not found")))?;
+
     // Backfill connect.json + settings.json with the authoritative user_id and email.
+    if cache_needs_verified_user {
+        let current_tokens = client.auth.read().await.clone();
+        connect_cache::update_connect_cache(
+            &network_dir,
+            &current_tokens,
+            client.auth_client(),
+            false,
+            Some(client.user_id()),
+        )
+        .await?;
+    }
     let backfill_auth_cfg = crate::app::settings::AuthConfig {
         user_id: user_id.clone(),
         email: email.clone(),
@@ -773,15 +804,6 @@ async fn connect_for_business(
         // Non-fatal: the wallet still works for this session.
         tracing::warn!("Failed to backfill Liana-Connect link: {}", e);
     }
-
-    // Find the wallet
-    let wallet = client
-        .list_wallets()
-        .await
-        .map_err(|e| login::Error::Unexpected(e.to_string()))?
-        .into_iter()
-        .find(|w| w.id == wallet_id)
-        .ok_or_else(|| login::Error::Unexpected(format!("Wallet {wallet_id} not found")))?;
 
     // Create wallet client
     let (wallet_client, wallet) = client.connect_wallet(wallet);

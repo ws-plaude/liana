@@ -164,15 +164,20 @@ pub async fn update_connect_cache(
                 .iter()
                 .find(|cred| cred.email == *email && (user_id.is_none() || cred.user_id.is_none()))
         });
-    if let Some(c) = cached {
+    let tokens = if let Some(c) = cached {
         // Another process updated the tokens
         if current_tokens.expires_at < c.tokens.expires_at {
             tracing::debug!("Liana-Connect authentication tokens are up to date, nothing to do");
-            return Ok(c.tokens.clone());
+            c.tokens.clone()
+        } else if refresh {
+            client
+                .refresh_token(&current_tokens.refresh_token)
+                .await
+                .map_err(ConnectCacheError::Updating)?
+        } else {
+            current_tokens.clone()
         }
-    }
-
-    let tokens = if refresh {
+    } else if refresh {
         client
             .refresh_token(&current_tokens.refresh_token)
             .await
@@ -582,6 +587,37 @@ mod tests {
             .unwrap();
 
         assert_eq!(tokens.expires_at, 100);
+    }
+
+    #[tokio::test]
+    async fn update_stamps_legacy_row_when_cached_tokens_are_fresher() {
+        let network_dir = temp_network_dir("update-stamps-fresher-legacy-row");
+        let mut path = network_dir.path().to_path_buf();
+        path.push(CONNECT_CACHE_FILENAME);
+        let cache = ConnectCache {
+            accounts: vec![Account {
+                user_id: None,
+                email: "a@x".to_string(),
+                tokens: tok(500),
+            }],
+        };
+        std::fs::write(&path, serde_json::to_vec_pretty(&cache).unwrap()).unwrap();
+        let client = AuthClient::new(
+            "http://127.0.0.1".to_string(),
+            "key".to_string(),
+            "a@x".to_string(),
+            "agent".to_string(),
+        );
+
+        let tokens = update_connect_cache(&network_dir, &tok(100), &client, false, Some("uid-1"))
+            .await
+            .unwrap();
+
+        let cache = ConnectCache::from_file(&network_dir).unwrap();
+        assert_eq!(tokens.expires_at, 500);
+        assert_eq!(cache.accounts.len(), 1);
+        assert_eq!(cache.accounts[0].user_id.as_deref(), Some("uid-1"));
+        assert_eq!(cache.accounts[0].tokens.expires_at, 500);
     }
 
     #[tokio::test]

@@ -511,22 +511,6 @@ pub async fn connect(
         tracing::warn!("Failed to stamp user_id on Liana-Connect cache: {}", e);
     }
 
-    // If the user OTP'd in for a known local wallet (post email-change or
-    // refresh-token revocation), update its settings.json entry too so the
-    // next launch's user_id-keyed lookup succeeds.
-    if !connect_wallet_id.is_empty() {
-        if let Err(e) = backfill_settings_for_wallet(
-            &network_dir,
-            &connect_wallet_id,
-            client.user_id(),
-            client.user_email(),
-        )
-        .await
-        {
-            tracing::warn!("Failed to update settings.json after OTP: {}", e);
-        }
-    }
-
     let wallets = client.list_wallets().await?;
     if wallets.is_empty() {
         return Ok(BackendState::NoWallet(client));
@@ -545,6 +529,17 @@ pub async fn connect(
             settings,
         ))
     } else if let Some(wallet) = wallets.into_iter().find(|w| w.id == connect_wallet_id) {
+        if let Err(e) = backfill_settings_for_wallet(
+            &network_dir,
+            &connect_wallet_id,
+            client.user_id(),
+            client.user_email(),
+        )
+        .await
+        {
+            tracing::warn!("Failed to update settings.json after OTP: {}", e);
+        }
+
         let (wallet_client, wallet) = client.connect_wallet(wallet);
         let coins = coins_to_cache(Arc::new(wallet_client.clone())).await?;
         let settings = wallet_client.get_wallet_settings().await?;
@@ -589,22 +584,24 @@ pub async fn connect_with_credentials(
         }
     };
 
+    let user_id_for_refresh = if cached.user_id.as_deref() == auth_cfg.user_id.as_deref() {
+        auth_cfg.user_id.as_deref()
+    } else {
+        None
+    };
     let mut tokens = cached.tokens;
+    let cache_needs_verified_user =
+        tokens.expires_at < chrono::Utc::now().timestamp() && user_id_for_refresh.is_none();
 
     if tokens.expires_at < chrono::Utc::now().timestamp() {
-        tokens = cache::update_connect_cache(
-            network_dir,
-            &tokens,
-            &auth,
-            true,
-            auth_cfg.user_id.as_deref(),
-        )
-        .await?;
+        tokens = if let Some(uid) = user_id_for_refresh {
+            cache::update_connect_cache(network_dir, &tokens, &auth, true, Some(uid)).await?
+        } else {
+            auth.refresh_token(&tokens.refresh_token).await?
+        };
     }
 
     let client = BackendClient::connect(auth, backend_api_url, tokens, network).await?;
-
-    backfill_local_link(network_dir, &client, &auth_cfg).await?;
 
     if let Some(wallet) = client
         .list_wallets()
@@ -612,6 +609,19 @@ pub async fn connect_with_credentials(
         .into_iter()
         .find(|w| w.id == auth_cfg.wallet_id)
     {
+        if cache_needs_verified_user {
+            let current_tokens = client.auth.read().await.clone();
+            cache::update_connect_cache(
+                network_dir,
+                &current_tokens,
+                client.auth_client(),
+                false,
+                Some(client.user_id()),
+            )
+            .await?;
+        }
+        backfill_local_link(network_dir, &client, &auth_cfg).await?;
+
         let (wallet_client, wallet) = client.connect_wallet(wallet);
         let coins = coins_to_cache(Arc::new(wallet_client.clone())).await?;
         let settings = wallet_client.get_wallet_settings().await?;
