@@ -22,6 +22,19 @@ jobs:
           sudo apt-get install --allow-downgrades libudev-dev pkg-config libvulkan-dev &&
           cargo clippy --all-features --all-targets -- -D warnings
 
+  supply_chain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v1
+      - uses: actions-rs/toolchain@v1
+        with:
+            toolchain: 1.88.0
+            override: true
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked
+      - name: Check advisories, dependency bans and sources
+        run: cargo deny --locked check advisories bans sources
+
   unit_tests:
     needs: linter
     strategy:
