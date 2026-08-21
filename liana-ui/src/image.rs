@@ -12,12 +12,20 @@ const LIANA_WALLET_LOGO: &[u8] = include_bytes!("../static/logos/liana_wallet.sv
 const LIANA_BUSINESS_LOGO: &[u8] = include_bytes!("../static/logos/liana_business.svg");
 const WIZARDSARDINE_LETTERING: &[u8] = include_bytes!("../static/logos/logo-wizardsardine.svg");
 
+fn icon_from_png(data: &[u8]) -> icon::Icon {
+    let img = image::load_from_memory_with_format(data, image::ImageFormat::Png)
+        .unwrap()
+        .into_rgba8();
+    let (width, height) = img.dimensions();
+    icon::from_rgba(img.into_raw(), width, height).unwrap()
+}
+
 pub fn liana_app_icon() -> icon::Icon {
-    icon::from_file_data(LIANA_APP_ICON, None).unwrap()
+    icon_from_png(LIANA_APP_ICON)
 }
 
 pub fn liana_business_app_icon() -> icon::Icon {
-    icon::from_file_data(LIANA_BUSINESS_APP_ICON, None).unwrap()
+    icon_from_png(LIANA_BUSINESS_APP_ICON)
 }
 
 pub fn liana_grey_logo() -> Svg<'static> {
