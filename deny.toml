@@ -9,15 +9,6 @@
 [advisories]
 yanked = "deny"
 ignore = [
-    # The five below ride on reqwest 0.11, which we cannot leave until async-hwi
-    # releases the version that moved to reqwest 0.12. With that release these
-    # all disappear on their own, along with the duplicate rustls and http.
-    "RUSTSEC-2026-0258", # h2 0.3, unbounded empty DATA frames
-    "RUSTSEC-2025-0134", # rustls-pemfile 1.0 unmaintained
-    "RUSTSEC-2026-0098", # rustls-webpki 0.101, name constraints for URI names
-    "RUSTSEC-2026-0099", # rustls-webpki 0.101, wildcard name constraints
-    "RUSTSEC-2026-0104", # rustls-webpki 0.101, panic parsing a revocation list
-
     # quick-xml is a build time dependency of wayland-scanner, which parses the
     # protocol files shipped inside the crate, never anything from the network.
     # winit pins the 0.37 line, so we cannot move it ourselves.
@@ -52,6 +43,7 @@ allow-git = [
     "https://github.com/wizardsardine/bdk",
     "https://github.com/wizardsardine/iced",
     "https://github.com/wizardsardine/iced_aw",
+    "https://github.com/ws-plaude/async-hwi",
 ]
 
 # Licenses are not checked here: the workspace crates carry the repository
