@@ -4,8 +4,16 @@
 use iced::futures::{SinkExt, Stream, StreamExt};
 use iced::stream::try_channel;
 
-use std::hash::Hash;
-use std::sync::Arc;
+use std::{hash::Hash, io::Read};
+
+use tokio::sync::mpsc;
+
+/// The downloaded archive weighs tens of megabytes, leave room for a slow link.
+const TIMEOUT_SECS: u64 = 30 * 60;
+
+const CHUNK_SIZE: usize = 64 * 1024;
+
+const PROGRESS_BUFFER: usize = 100;
 
 // Just a little utility function
 pub fn file<I: 'static + Hash + Copy + Send + Sync, T: ToString>(
@@ -22,34 +30,58 @@ fn download(url: String) -> impl Stream<Item = Result<Progress, DownloadError>> 
     try_channel(
         100,
         move |mut output: iced::futures::channel::mpsc::Sender<Progress>| async move {
-            let response = reqwest::get(&url).await?;
-            let total = response.content_length();
+            let (tx, mut rx) = mpsc::channel(PROGRESS_BUFFER);
+            let downloader = tokio::task::spawn_blocking(move || download_blocking(&url, &tx));
 
-            let _ = output.send(Progress::Downloading(0.0)).await;
-
-            let mut byte_stream = response.bytes_stream();
-            let mut downloaded = 0;
-            let mut bytes = Vec::new();
-
-            while let Some(next_bytes) = byte_stream.next().await {
-                let chunk = next_bytes?;
-                downloaded += chunk.len();
-                bytes.append(&mut chunk.to_vec());
-
-                if let Some(total) = total {
-                    let _ = output
-                        .send(Progress::Downloading(
-                            100.0 * downloaded as f32 / total as f32,
-                        ))
-                        .await;
-                }
+            // Dropping this future drops `rx`, which is what tells the blocking task to stop.
+            while let Some(progress) = rx.recv().await {
+                let _ = output.send(progress).await;
             }
 
-            let _ = output.send(Progress::Finished(bytes)).await;
-
-            Ok(())
+            downloader
+                .await
+                .map_err(|e| DownloadError::RequestFailed(e.to_string()))?
         },
     )
+}
+
+/// Downloads `url`, reporting progress over `tx`. Returns as soon as the receiver is gone.
+fn download_blocking(url: &str, tx: &mpsc::Sender<Progress>) -> Result<(), DownloadError> {
+    let mut response = minreq::get(url).with_timeout(TIMEOUT_SECS).send_lazy()?;
+    let total = response
+        .headers
+        .iter()
+        .find(|(key, _)| key.eq_ignore_ascii_case("content-length"))
+        .and_then(|(_, value)| value.parse::<usize>().ok());
+
+    if tx.blocking_send(Progress::Downloading(0.0)).is_err() {
+        return Ok(());
+    }
+
+    let mut bytes = Vec::with_capacity(total.unwrap_or(0));
+    let mut chunk = vec![0u8; CHUNK_SIZE];
+    loop {
+        // Checked every chunk, not just when progress is sent: without a content length there is
+        // no progress to report and this is the only thing that notices the receiver is gone.
+        if tx.is_closed() {
+            return Ok(());
+        }
+        let read = response.read(&mut chunk)?;
+        if read == 0 {
+            break;
+        }
+        bytes.extend_from_slice(&chunk[..read]);
+        if let Some(total) = total {
+            let percentage = 100.0 * bytes.len() as f32 / total as f32;
+            if tx.blocking_send(Progress::Downloading(percentage)).is_err() {
+                return Ok(());
+            }
+        }
+    }
+
+    let _ = tx.blocking_send(Progress::Finished(bytes));
+
+    Ok(())
 }
 
 #[derive(Debug, Clone)]
@@ -60,7 +92,7 @@ pub enum Progress {
 
 #[derive(Debug, Clone)]
 pub enum DownloadError {
-    RequestFailed(Arc<reqwest::Error>),
+    RequestFailed(String),
     NoContentLength,
 }
 
@@ -77,8 +109,106 @@ impl std::fmt::Display for DownloadError {
     }
 }
 
-impl From<reqwest::Error> for DownloadError {
-    fn from(error: reqwest::Error) -> Self {
-        DownloadError::RequestFailed(Arc::new(error))
+impl From<minreq::Error> for DownloadError {
+    fn from(error: minreq::Error) -> Self {
+        DownloadError::RequestFailed(error.to_string())
+    }
+}
+
+impl From<std::io::Error> for DownloadError {
+    fn from(error: std::io::Error) -> Self {
+        DownloadError::RequestFailed(error.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::{
+        io::{BufRead, BufReader, Write},
+        net::TcpListener,
+        sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        },
+    };
+
+    const BODY_LEN: usize = 100 * 1024 * 1024;
+
+    fn serve_endless_body() -> (String, Arc<AtomicUsize>) {
+        serve_body(true)
+    }
+
+    /// Serves a body of `BODY_LEN` bytes, and reports how many of them made it into the socket.
+    /// Without a content length the client reads until the connection closes, which is the case
+    /// where no progress is ever reported.
+    fn serve_body(with_content_length: bool) -> (String, Arc<AtomicUsize>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let url = format!("http://{}/bitcoind", listener.local_addr().expect("addr"));
+        let written = Arc::new(AtomicUsize::new(0));
+        let served = written.clone();
+
+        std::thread::spawn(move || {
+            let (stream, _) = listener.accept().expect("accept");
+            let mut reader = BufReader::new(stream);
+            let mut line = String::new();
+            while reader.read_line(&mut line).expect("read line") > 2 {
+                line.clear();
+            }
+            let mut stream = reader.into_inner();
+            let headers = if with_content_length {
+                format!("HTTP/1.1 200 OK\r\nContent-Length: {BODY_LEN}\r\n\r\n")
+            } else {
+                "HTTP/1.1 200 OK\r\n\r\n".to_string()
+            };
+            stream.write_all(headers.as_bytes()).expect("write headers");
+
+            let chunk = vec![7u8; CHUNK_SIZE];
+            while served.load(Ordering::Relaxed) < BODY_LEN {
+                if stream.write_all(&chunk).is_err() {
+                    break;
+                }
+                served.fetch_add(chunk.len(), Ordering::Relaxed);
+            }
+        });
+
+        (url, written)
+    }
+
+    #[test]
+    fn dropped_receiver_stops_the_download() {
+        let (url, written) = serve_endless_body();
+        let (tx, mut rx) = mpsc::channel(1);
+        let downloader = std::thread::spawn(move || download_blocking(&url, &tx));
+
+        let first = rx.blocking_recv().expect("first progress");
+        assert!(matches!(first, Progress::Downloading(p) if p == 0.0));
+        drop(rx);
+
+        let res = downloader.join().expect("downloader thread");
+        assert!(matches!(res, Ok(())));
+        assert!(
+            written.load(Ordering::Relaxed) < BODY_LEN,
+            "the whole body was downloaded despite the receiver being dropped"
+        );
+    }
+
+    #[test]
+    fn dropped_receiver_stops_a_download_without_content_length() {
+        let (url, written) = serve_body(false);
+        let (tx, mut rx) = mpsc::channel(1);
+        let downloader = std::thread::spawn(move || download_blocking(&url, &tx));
+
+        // No content length means no progress is ever sent, so only the closed channel can stop it.
+        rx.blocking_recv().expect("first progress");
+        drop(rx);
+
+        let res = downloader.join().expect("downloader thread");
+        assert!(matches!(res, Ok(())));
+        assert!(
+            written.load(Ordering::Relaxed) < BODY_LEN,
+            "the whole body was downloaded despite the receiver being dropped"
+        );
     }
 }

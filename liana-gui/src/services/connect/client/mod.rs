@@ -3,6 +3,7 @@ pub mod backend;
 pub mod cache;
 
 use liana::miniscript::bitcoin::{self, Network};
+use liana_connect::http::{self, Method};
 
 use serde::Deserialize;
 
@@ -43,7 +44,7 @@ impl BackendType {
 pub async fn get_service_config(
     network: bitcoin::Network,
     backend: BackendType,
-) -> Result<ServiceConfig, reqwest::Error> {
+) -> Result<ServiceConfig, http::Error> {
     let backend_api_url = match (network, backend) {
         (Network::Bitcoin, BackendType::LianaConnect) => DEFAULT_CONNECT_MAINNET_URL.to_string(),
         (Network::Bitcoin, BackendType::LianaBusiness(_)) => BUSINESS_MAINNET_API_URL.to_string(),
@@ -52,14 +53,12 @@ pub async fn get_service_config(
         (_, BackendType::LianaBusiness(_)) => std::env::var("LIANA_BUSINESS_SIGNET_API_URL")
             .unwrap_or_else(|_| BUSINESS_SIGNET_API_URL.to_string()),
     };
-    let client = reqwest::Client::new();
-    let res: ServiceConfigResource = client
-        .get(format!("{backend_api_url}/v1/desktop"))
+    let res: ServiceConfigResource = http::Client::new()
+        .request(Method::Get, format!("{backend_api_url}/v1/desktop"))
         .header("User-Agent", backend.user_agent())
         .send()
         .await?
-        .json()
-        .await?;
+        .json()?;
     Ok(ServiceConfig {
         auth_api_url: res.auth_api_url,
         auth_api_public_key: res.auth_api_public_key,

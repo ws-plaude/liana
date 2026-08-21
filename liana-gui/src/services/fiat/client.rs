@@ -4,7 +4,7 @@ use super::Currency;
 
 use async_trait::async_trait;
 
-use crate::services::http::ResponseExt;
+use liana_connect::http::{self, Method};
 
 pub struct PriceClient<C> {
     inner: C,
@@ -24,7 +24,7 @@ impl<C: Default> PriceClient<C> {
 }
 
 #[async_trait]
-impl PriceApi for PriceClient<reqwest::Client> {
+impl PriceApi for PriceClient<http::Client> {
     async fn get_price(&self, currency: Currency) -> Result<GetPriceResult, PriceApiError> {
         if self.source == PriceSource::Wizardsardine {
             return Err(PriceApiError::UnsupportedSource(self.source));
@@ -49,14 +49,14 @@ impl PriceApi for PriceClient<reqwest::Client> {
 // Sends a GET request to the specified URL and returns the parsed JSON response.
 // If the request fails or the response is not successful, it returns an error.
 async fn get_data(
-    client: &reqwest::Client,
+    client: &http::Client,
     url: &str,
     user_agent: Option<String>,
 ) -> Result<serde_json::Value, PriceApiError> {
-    let mut request = client.get(url);
+    let mut request = client.request(Method::Get, url);
 
     if let Some(ua) = user_agent {
-        request = request.header(reqwest::header::USER_AGENT, ua);
+        request = request.header("User-Agent", ua);
     }
 
     let response = request
@@ -64,11 +64,9 @@ async fn get_data(
         .await
         .map_err(|e| PriceApiError::RequestFailed(e.to_string()))?
         .check_success()
-        .await
         .map_err(PriceApiError::NotSuccessResponse)?;
     let data: serde_json::Value = response
         .json()
-        .await
         .map_err(|e| PriceApiError::CannotParseResponse(e.to_string()))?;
     Ok(data)
 }

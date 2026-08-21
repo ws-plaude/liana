@@ -247,15 +247,7 @@ impl Step for RemoteBackendLogin {
                                     client::BackendType::LianaConnect,
                                 )
                                 .await
-                                .map_err(|e| {
-                                    if e.status() == Some(reqwest::StatusCode::NOT_FOUND) {
-                                        Error::Unexpected(
-                                            "Remote servers are unresponsive".to_string(),
-                                        )
-                                    } else {
-                                        Error::Unexpected(e.to_string())
-                                    }
-                                })?;
+                                .map_err(|e| Error::Unexpected(e.to_string()))?;
                                 let client = AuthClient::new(
                                     config.auth_api_url,
                                     config.auth_api_public_key,
@@ -517,13 +509,7 @@ pub async fn connect_with_existing_account(
 ) -> Result<context::RemoteBackend, Error> {
     let config = client::get_service_config(network, client::BackendType::LianaConnect)
         .await
-        .map_err(|e| {
-            if e.status() == Some(reqwest::StatusCode::NOT_FOUND) {
-                Error::Unexpected("Remote servers are unresponsive".to_string())
-            } else {
-                Error::Unexpected(e.to_string())
-            }
-        })?;
+        .map_err(|e| Error::Unexpected(e.to_string()))?;
 
     let client = AuthClient::new(
         config.auth_api_url,

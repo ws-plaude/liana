@@ -3,7 +3,7 @@ use super::Currency;
 
 use async_trait::async_trait;
 
-use crate::services::http::NotSuccessResponseInfo;
+use liana_connect::http::NotSuccessResponseInfo;
 
 #[derive(Debug, Clone)]
 pub struct GetPriceResult {

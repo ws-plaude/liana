@@ -6,7 +6,10 @@ use crate::{
     state::Message,
 };
 use crossbeam_channel as channel;
-use liana_connect::ws_business::{self, Org, Request, Response, User, UserRole, Wallet};
+use liana_connect::{
+    http,
+    ws_business::{self, Org, Request, Response, User, UserRole, Wallet},
+};
 use liana_gui::{
     dir::{LianaDirectory, NetworkDirectory},
     services::connect::client::{
@@ -72,18 +75,17 @@ pub fn ws_url(network: Network) -> String {
 pub const PROTOCOL_VERSION: u8 = 1;
 
 /// Get service configuration for the business server (blocking)
-fn get_service_config_blocking(network: Network) -> Result<ServiceConfig, reqwest::Error> {
+fn get_service_config_blocking(network: Network) -> Result<ServiceConfig, minreq::Error> {
     use tracing::debug;
 
     let api_url = auth_api_url(network);
-    let client = reqwest::blocking::Client::new();
     let url = format!("{api_url}/v1/desktop");
 
     debug!("get_service_config_blocking: fetching from {}", url);
-    let response = client.get(&url).send()?;
+    let response = minreq::get(&url).with_timeout(http::TIMEOUT_SECS).send()?;
     debug!(
         "get_service_config_blocking: response status={}",
-        response.status()
+        response.status_code
     );
 
     let res: ServiceConfigResource = response.json()?;
@@ -364,8 +366,7 @@ impl Client {
         let mut valid = vec![];
         let mut to_remove = vec![];
 
-        // Fetch config BEFORE entering async context
-        // (reqwest::blocking cannot be used inside tokio runtime)
+        // Fetch config BEFORE entering async context, the call is blocking.
         let config = get_service_config_blocking(network).ok();
 
         let rt = tokio::runtime::Runtime::new().unwrap();

@@ -1,7 +1,5 @@
-use reqwest::{Error, IntoUrl, Method, RequestBuilder, Response};
+use liana_connect::http::{self, Method};
 use serde::{Deserialize, Serialize};
-
-use crate::services::http::{NotSuccessResponseInfo, ResponseExt};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SignInOtp<'a> {
@@ -38,9 +36,8 @@ pub struct AccessTokenResponse {
 
 #[derive(Debug, Clone)]
 pub struct AuthClient {
-    http: reqwest::Client,
+    http: http::Client,
     url: String,
-    api_public_key: String,
     pub email: String,
     user_agent: String,
 }
@@ -61,8 +58,8 @@ impl std::fmt::Display for AuthError {
     }
 }
 
-impl From<Error> for AuthError {
-    fn from(value: Error) -> Self {
+impl From<http::Error> for AuthError {
+    fn from(value: http::Error) -> Self {
         AuthError {
             http_status: None,
             error: value.to_string(),
@@ -70,8 +67,8 @@ impl From<Error> for AuthError {
     }
 }
 
-impl From<NotSuccessResponseInfo> for AuthError {
-    fn from(value: NotSuccessResponseInfo) -> Self {
+impl From<http::NotSuccessResponseInfo> for AuthError {
+    fn from(value: http::NotSuccessResponseInfo) -> Self {
         AuthError {
             http_status: Some(value.status_code),
             error: value.text,
@@ -82,9 +79,11 @@ impl From<NotSuccessResponseInfo> for AuthError {
 impl AuthClient {
     pub fn new(url: String, api_public_key: String, email: String, user_agent: String) -> Self {
         AuthClient {
-            http: reqwest::Client::new(),
+            http: http::Client::new()
+                .header("apikey", api_public_key)
+                .header("Content-Type", "application/json")
+                .header("User-Agent", &user_agent),
             url,
-            api_public_key,
             email,
             user_agent,
         }
@@ -94,36 +93,25 @@ impl AuthClient {
         &self.user_agent
     }
 
-    fn request<U: IntoUrl>(&self, method: Method, url: U) -> RequestBuilder {
-        let req = self
-            .http
-            .request(method, url)
-            .header("apikey", &self.api_public_key)
-            .header("Content-Type", "application/json")
-            .header("User-Agent", &self.user_agent);
-        tracing::debug!("Sending http request: {:?}", req);
-        req
-    }
-
     /// The redirect_to is set up so the Supabase HTML template has the information
     /// that the user is using the desktop to authenticate and will display the token
     /// instead of the confirmation link button.
     pub async fn sign_in_otp(&self) -> Result<(), AuthError> {
-        self.request(
-            Method::POST,
-            format!(
-                "{}/auth/v1/otp?redirect_to=https://desktop.lianalite.com",
-                self.url
-            ),
-        )
-        .json(&SignInOtp {
-            email: &self.email,
-            create_user: true,
-        })
-        .send()
-        .await?
-        .check_success()
-        .await?;
+        self.http
+            .request(
+                Method::Post,
+                format!(
+                    "{}/auth/v1/otp?redirect_to=https://desktop.lianalite.com",
+                    self.url
+                ),
+            )
+            .json(&SignInOtp {
+                email: &self.email,
+                create_user: true,
+            })
+            .send()
+            .await?
+            .check_success()?;
 
         Ok(())
     }
@@ -138,12 +126,9 @@ impl AuthClient {
     }
 
     pub async fn verify_otp(&self, token: &str) -> Result<AccessTokenResponse, AuthError> {
-        let response: Response = self
+        let response = self
             .http
-            .post(format!("{}/auth/v1/verify", self.url))
-            .header("apikey", &self.api_public_key)
-            .header("Content-Type", "application/json")
-            .header("User-Agent", &self.user_agent)
+            .request(Method::Post, format!("{}/auth/v1/verify", self.url))
             .json(&VerifyOtp {
                 email: &self.email,
                 token,
@@ -151,30 +136,25 @@ impl AuthClient {
             })
             .send()
             .await?
-            .check_success()
-            .await?;
+            .check_success()?;
 
-        Ok(response.json().await?)
+        Ok(response.json()?)
     }
 
     pub async fn refresh_token(
         &self,
         refresh_token: &str,
     ) -> Result<AccessTokenResponse, AuthError> {
-        let response: Response = self
+        let response = self
             .http
-            .post(format!(
-                "{}/auth/v1/token?grant_type=refresh_token",
-                self.url
-            ))
-            .header("apikey", &self.api_public_key)
-            .header("Content-Type", "application/json")
-            .header("User-Agent", &self.user_agent)
+            .request(
+                Method::Post,
+                format!("{}/auth/v1/token?grant_type=refresh_token", self.url),
+            )
             .json(&RefreshToken { refresh_token })
             .send()
             .await?
-            .check_success()
-            .await?;
-        Ok(response.json().await?)
+            .check_success()?;
+        Ok(response.json()?)
     }
 }

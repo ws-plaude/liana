@@ -69,7 +69,7 @@ pub fn setup_logger(
                         && !metadata.target().starts_with("async_io")
                         && !metadata.target().starts_with("rustls")
                         && !metadata.target().starts_with("hyper")
-                        && !metadata.target().starts_with("reqwest")
+                        && !metadata.target().starts_with("minreq")
                         && !metadata.target().starts_with("tungstenite")
                         && !metadata.target().starts_with("tokio")
                         && !metadata.target().starts_with("iced_graphics")

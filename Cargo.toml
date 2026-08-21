@@ -73,7 +73,7 @@ tracing = "0.1.37"
 tracing-subscriber = "0.3.16"
 libc = "0.2"
 base64 = "0.21"
-reqwest = { version = "0.12", default-features = false }
+minreq = { version = "3.0", default-features = false, features = ["https-rustls", "json-using-serde"] }
 rfd = { version = "0.15.1", default-features = false, features = ["xdg-portal", "tokio"] }
 fs2 = "0.4.3"
 encrypted_backup = { version = "=0.0.2", package = "bitcoin-encrypted-backup", default-features = false, features = ["miniscript_12_0", "rand"] }
@@ -99,6 +99,8 @@ iced_tiny_skia = { git = "https://github.com/wizardsardine/iced", rev = "ccf0115
 iced_program = { git = "https://github.com/wizardsardine/iced", rev = "ccf011541eff660ed2bc6a01f9f00e150b501453" }
 iced_debug = { git = "https://github.com/wizardsardine/iced", rev = "ccf011541eff660ed2bc6a01f9f00e150b501453" }
 # Fork carrying the reqwest 0.12 bump, the inlined ledger transport and crossbeam-channel.
-async-hwi = { git = "https://github.com/ws-plaude/async-hwi", rev = "4189b557c2f3c605f7f915bdf10b724e982bea03" }
+async-hwi = { git = "https://github.com/ws-plaude/async-hwi", rev = "ab548d64fa369f86c67c6eb5ea9e8446c0e54d85" }
 # iced_aw constructs Border literals exhaustively, so it needs the same fork's Border style field.
 iced_aw = { git = "https://github.com/wizardsardine/iced_aw", rev = "488248db097769cd2269af75b5f93d5c65f45a38" }
+# Fork pinning rustls to the ring provider, upstream defaults to aws-lc which builds a C library.
+minreq = { git = "https://github.com/ws-plaude/minreq", rev = "4bb469396ce5fa9f57cb0ebfed9cd1f84f7fc937" }

@@ -14,14 +14,17 @@ path = "src/lib.rs"
 
 [dependencies]
 liana = { path = "../liana" }
-async-trait = { workspace = true }
 bip329 = { workspace = true, default-features = false }
 bip39 = { workspace = true }
 getrandom = { workspace = true }
 miniscript = { workspace = true, features = ["serde"]}
-reqwest = { workspace = true, features = ["json", "rustls-tls"] }
+minreq = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
+tokio = { workspace = true, features = ["rt"] }
 tracing = { workspace = true }
 tungstenite = { workspace = true }
 uuid = { workspace = true , features = ["serde", "v4"]}
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }
