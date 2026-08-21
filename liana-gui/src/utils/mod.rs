@@ -18,6 +18,34 @@ pub mod sandbox;
 #[cfg(test)]
 pub mod mock;
 
+/// Encodes `pairs` as an application/x-www-form-urlencoded query string.
+///
+/// Same byte set as the WHATWG serializer: space becomes `+`, the unreserved characters and
+/// `*-._` are kept, everything else is percent-encoded.
+pub fn form_urlencode(pairs: &[(&str, &str)]) -> String {
+    fn encode(value: &str, out: &mut String) {
+        for byte in value.as_bytes() {
+            match byte {
+                b' ' => out.push('+'),
+                b'*' | b'-' | b'.' | b'_' => out.push(*byte as char),
+                b if b.is_ascii_alphanumeric() => out.push(*b as char),
+                b => out.push_str(&format!("%{b:02X}")),
+            }
+        }
+    }
+
+    let mut query = String::new();
+    for (key, value) in pairs {
+        if !query.is_empty() {
+            query.push('&');
+        }
+        encode(key, &mut query);
+        query.push('=');
+        encode(value, &mut query);
+    }
+    query
+}
+
 /// Opens `url` with the platform default handler, without blocking.
 pub fn open_url(url: &str) -> std::io::Result<()> {
     #[cfg(target_os = "linux")]
@@ -110,7 +138,25 @@ pub fn default_derivation_path(network: Network) -> DerivationPath {
 
 #[cfg(test)]
 mod tests {
-    use super::is_valid_email;
+    use super::{form_urlencode, is_valid_email};
+
+    #[test]
+    fn form_urlencoding() {
+        assert_eq!(form_urlencode(&[("a", "b")]), "a=b");
+        assert_eq!(form_urlencode(&[("a", "b"), ("c", "d")]), "a=b&c=d");
+        assert_eq!(
+            form_urlencode(&[("subject", "hi there")]),
+            "subject=hi+there"
+        );
+        // Newlines, quotes and the separators themselves must not survive unescaped.
+        assert_eq!(
+            form_urlencode(&[("body", "a\nb\"c\"&d=e")]),
+            "body=a%0Ab%22c%22%26d%3De"
+        );
+        assert_eq!(form_urlencode(&[("k", "*-._")]), "k=*-._");
+        assert_eq!(form_urlencode(&[("k", "é")]), "k=%C3%A9");
+        assert_eq!(form_urlencode(&[]), "");
+    }
 
     #[test]
     fn email_validation() {

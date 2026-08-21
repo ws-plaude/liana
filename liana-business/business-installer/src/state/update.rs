@@ -25,7 +25,6 @@ use liana_gui::{
 use liana_ui::widget::text_input;
 use miniscript::bitcoin::bip32::Fingerprint;
 use tracing::{debug, error, trace};
-use url::form_urlencoded::Serializer;
 use uuid::Uuid;
 
 fn navigate_back_target(current_view: View) -> Option<View> {
@@ -961,10 +960,7 @@ impl State {
         let body = format!(
             "Hi,\n\nI reviewed the template for {wallet_name} and can't approve it as-is. Could you adjust:\n\n<your requirements>\n\nThanks."
         );
-        let query = Serializer::new(String::new())
-            .append_pair("subject", &subject)
-            .append_pair("body", &body)
-            .finish();
+        let query = liana_gui::utils::form_urlencode(&[("subject", &subject), ("body", &body)]);
         let url = format!("mailto:hello@lianawallet.com?{query}");
 
         if let Err(error) = liana_gui::utils::open_url(&url) {
