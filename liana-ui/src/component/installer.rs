@@ -220,7 +220,6 @@ fn network_warning<'a, M: 'a>(network: Network) -> Element<'a, M> {
             Network::Testnet4 => "TESTNET4 WALLET",
             Network::Regtest => "REGTEST WALLET",
             Network::Bitcoin => unreachable!(),
-            _ => "NON-MAINNET WALLET",
         }),
         text::new::caption(", COINS HAVE "),
         text::new::b5_bold("NO VALUE"),

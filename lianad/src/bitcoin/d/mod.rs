@@ -363,10 +363,10 @@ impl BitcoinD {
                         return Err(e);
                     } else if e.is_transient() {
                         // If we start hitting transient errors retry requests for a limited time.
-                        log::warn!("Transient error when sending request to bitcoind: {}", e);
+                        log::warn!("Transient error when sending request to bitcoind: {e}");
                         if i <= self.retries {
                             std::thread::sleep(Duration::from_secs(1));
-                            log::debug!("Retrying RPC request to bitcoind: attempt #{}", i);
+                            log::debug!("Retrying RPC request to bitcoind: attempt #{i}");
                         }
                         error = Some(e);
                     } else {
@@ -380,11 +380,11 @@ impl BitcoinD {
     }
 
     fn try_request(&self, client: &Client, req: jsonrpc::Request) -> Result<Json, BitcoindError> {
-        log::trace!("Sending to bitcoind: {:#?}", req);
+        log::trace!("Sending to bitcoind: {req:#?}");
         match client.send_request(req) {
             Ok(resp) => {
                 let res = resp.result().map_err(BitcoindError::Server)?;
-                log::trace!("Got from bitcoind: {:#?}", res);
+                log::trace!("Got from bitcoind: {res:#?}");
 
                 Ok(res)
             }
@@ -718,7 +718,6 @@ impl BitcoinD {
             bitcoin::Network::Testnet4 => "testnet4",
             bitcoin::Network::Regtest => "regtest",
             bitcoin::Network::Signet => "signet",
-            _ => "Unknown network, undefined at the time of writing",
         };
         if bitcoind_net != bip70_net {
             return Err(BitcoindError::NetworkMismatch(
@@ -1145,10 +1144,7 @@ impl BitcoinD {
             if let Err(e) = self
                 .make_noreply_request("importdescriptors", params!(Json::Array(desc_json.clone())))
             {
-                log::error!(
-                    "Error when calling 'importdescriptors' for rescanning: {}",
-                    e
-                );
+                log::error!("Error when calling 'importdescriptors' for rescanning: {e}");
             }
 
             i += 1;

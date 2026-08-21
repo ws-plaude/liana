@@ -141,7 +141,6 @@ pub fn bitcoind_network_dir(network: &Network) -> Option<String> {
         Network::Testnet4 => "testnet4",
         Network::Regtest => "regtest",
         Network::Signet => "signet",
-        _ => panic!("Directory required for this network is unknown."),
     };
     Some(dir.to_string())
 }
@@ -529,9 +528,9 @@ impl Bitcoind {
         loop {
             match process.try_wait() {
                 Ok(None) => {}
-                Err(e) => log::error!("Error while trying to wait for bitcoind: {}", e),
+                Err(e) => log::error!("Error while trying to wait for bitcoind: {e}"),
                 Ok(Some(status)) => {
-                    log::error!("Bitcoind exited with status '{}'", status);
+                    log::error!("Bitcoind exited with status '{status}'");
                     return Err(StartInternalBitcoindError::ProcessExited(status));
                 }
             }
@@ -556,7 +555,7 @@ impl Bitcoind {
                         // reading the previous state of the .cookie file and not the new generated
                         // one.
                         if let Err(e) = process.kill() {
-                            log::error!("Error trying to kill bitcoind process: '{}'", e);
+                            log::error!("Error trying to kill bitcoind process: '{e}'");
                         }
                         return Err(StartInternalBitcoindError::BitcoinDError(e.to_string()));
                     }

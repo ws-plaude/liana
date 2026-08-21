@@ -7,9 +7,8 @@ mod jsonrpc;
 #[cfg(test)]
 mod testutils;
 
-pub use bdk_electrum::electrum_client;
 pub use bip329;
-use bitcoin::electrum;
+pub use bwk_electrum;
 use datadir::DataDirectory;
 pub use miniscript;
 
@@ -34,7 +33,7 @@ use std::{
     thread,
 };
 
-use miniscript::bitcoin::{constants::ChainHash, hashes::Hash, secp256k1, BlockHash};
+use miniscript::bitcoin::secp256k1;
 
 #[cfg(not(test))]
 use std::panic;
@@ -57,13 +56,7 @@ pub fn setup_panic_hook() {
             .downcast_ref::<&str>()
             .map(|s| s.to_string())
             .or_else(|| panic_info.payload().downcast_ref::<String>().cloned());
-        log::error!(
-            "panic occurred at line {} of file {}: {:?}\n{:?}",
-            line,
-            file,
-            info,
-            bt
-        );
+        log::error!("panic occurred at line {line} of file {file}: {info:?}\n{bt:?}");
     }));
 }
 
@@ -253,69 +246,20 @@ fn setup_bitcoind(
     Ok(bitcoind)
 }
 
-// Create an Electrum interface from a client and BDK-based wallet, and do some sanity checks.
+// Open the wallet stores backing the Electrum interface and connect to the server.
 // If all went well, returns the interface to Electrum.
-fn setup_electrum(
-    config: &Config,
-    db: sync::Arc<sync::Mutex<dyn DatabaseInterface>>,
-) -> Result<Electrum, StartupError> {
+fn setup_electrum(config: &Config, data_dir: &DataDirectory) -> Result<Electrum, StartupError> {
     let electrum_config = match config.bitcoin_backend.as_ref() {
         Some(config::BitcoinBackend::Electrum(electrum_config)) => electrum_config,
         _ => Err(StartupError::MissingElectrumConfig)?,
     };
-    // First create the client to communicate with the Electrum server.
-    let client = electrum::client::Client::new(electrum_config)
-        .map_err(|e| StartupError::Electrum(ElectrumError::Client(e)))?;
-    // Then create the BDK-based wallet and populate it with DB data.
-    let mut db_conn = db.connection();
-    let tip = db_conn.chain_tip();
-    let coins: Vec<_> = db_conn
-        .coins(&[], &[])
-        .into_values()
-        .map(|c| crate::bitcoin::Coin {
-            outpoint: c.outpoint,
-            amount: c.amount,
-            derivation_index: c.derivation_index,
-            is_change: c.is_change,
-            is_immature: c.is_immature,
-            block_info: c.block_info.map(|info| crate::bitcoin::BlockInfo {
-                height: info.height,
-                time: info.time,
-            }),
-            spend_txid: c.spend_txid,
-            spend_block: c.spend_block.map(|info| crate::bitcoin::BlockInfo {
-                height: info.height,
-                time: info.time,
-            }),
-        })
-        .collect();
-    let txids = db_conn.list_saved_txids();
-    // This will only return those txs referenced by our coins, which may not be all of `txids`.
-    let txs: Vec<_> = db_conn
-        .list_wallet_transactions(&txids)
-        .into_iter()
-        .map(|(tx, _, _)| tx)
-        .collect();
-    let (receive_index, change_index) = (db_conn.receive_index(), db_conn.change_index());
-    let genesis_hash = {
-        let chain_hash = ChainHash::using_genesis_block(config.bitcoin_config.network);
-        BlockHash::from_byte_array(*chain_hash.as_bytes())
-    };
-    let bdk_wallet = electrum::wallet::BdkWallet::new(
+    Electrum::new(
+        electrum_config,
         &config.main_descriptor,
-        genesis_hash,
-        tip,
-        &coins,
-        &txs,
-        receive_index,
-        change_index,
-    );
-    let full_scan = db_conn.rescan_timestamp().is_some();
-    let electrum = Electrum::new(client, bdk_wallet, full_scan).map_err(StartupError::Electrum)?;
-    electrum
-        .sanity_checks(&genesis_hash)
-        .map_err(StartupError::Electrum)?;
-    Ok(electrum)
+        config.bitcoin_config.network,
+        data_dir.path().to_path_buf(),
+    )
+    .map_err(StartupError::Electrum)
 }
 
 #[derive(Clone)]
@@ -435,7 +379,7 @@ impl DaemonHandle {
             )
                 as sync::Arc<sync::Mutex<dyn BitcoinInterface>>,
             (None, Some(config::BitcoinBackend::Electrum(..))) => {
-                sync::Arc::from(sync::Mutex::from(setup_electrum(&config, db.clone())?))
+                sync::Arc::from(sync::Mutex::from(setup_electrum(&config, &data_dir)?))
             }
             (None, None) => Err(StartupError::MissingBitcoinBackendConfig)?,
         };

@@ -35,7 +35,6 @@ unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 allow-git = [
     "https://github.com/ws-plaude/bwk",
-    "https://github.com/wizardsardine/bdk",
     "https://github.com/wizardsardine/iced",
     "https://github.com/wizardsardine/iced_aw",
     "https://github.com/ws-plaude/minreq",

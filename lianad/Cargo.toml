@@ -26,7 +26,10 @@ liana = { path = "../liana" }
 miniscript = { workspace = true, features = ["serde", "compiler", "base64"] }
 
 # For Electrum backend.
-bdk_electrum = { workspace = true, default-features = false, features = [ "use-rustls-ring" ] }
+bwk-coin = { workspace = true }
+bwk-descriptor = { workspace = true }
+bwk-electrum = { workspace = true }
+bwk-persist = { workspace = true }
 
 # Don't reinvent the wheel
 

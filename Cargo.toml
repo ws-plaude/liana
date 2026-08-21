@@ -39,15 +39,21 @@ iced_runtime = "0.14.0"
 iced_core = "0.14.0"
 jsonrpc = { version = "0.17", default-features = false }
 
-# Pinned to this version because they keep breaking their MSRV in point releases...
-# FIXME: this is unfortunate, we don't receive the updates (sometimes critical) from SQLite.
-rusqlite = "0.30"
+# lianad's own wallet database. Only one crate in the graph may link the native
+# sqlite3 library, so this stays the single rusqlite in the tree.
+rusqlite = "0.33"
 
-# We use a branch of the v1.0.0-alpha.13 tag, which corresponds to the bdk_electrum v0.15 crate,
-# in order to bump the electrum_client dependency to v0.21. This allows to use the "use-rustls-ring"
-# feature and avoid the default aws-ls-rs provider from rustls, which would break the reproducible build
-# (see https://github.com/aws/aws-lc-rs/issues/409).
-bdk_electrum = { git = "https://github.com/wizardsardine/bdk", branch = "release/1.0.0-alpha.13", default-features = false }
+# Electrum backend: validated block headers and merkle proofs for transaction
+# inclusion. lianad takes the scanner alone; the wallet half of bwk (signers,
+# transaction building) is not in its graph.
+bwk-electrum = { git = "https://github.com/ws-plaude/bwk", rev = "f8ee45e2a863faf5fbf5152bc83446742bd47285" }
+bwk-coin = { git = "https://github.com/ws-plaude/bwk", rev = "f8ee45e2a863faf5fbf5152bc83446742bd47285" }
+bwk-descriptor = { git = "https://github.com/ws-plaude/bwk", rev = "f8ee45e2a863faf5fbf5152bc83446742bd47285" }
+# Without `sqlite`: lianad opens bwk's stores as JSON and keeps its own wallet
+# data in its own database, so bwk's SQLite backend is never reached. Leaving it
+# on would put a second rusqlite requirement in the graph and pin our version to
+# whatever bwk links.
+bwk-persist = { git = "https://github.com/ws-plaude/bwk", rev = "f8ee45e2a863faf5fbf5152bc83446742bd47285", default-features = false }
 
 # liana-connect WebSocket protocol
 uuid = "1.19.0"
