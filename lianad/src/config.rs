@@ -246,6 +246,23 @@ impl From<std::io::Error> for ConfigError {
 
 impl std::error::Error for ConfigError {}
 
+/// Base directory user configuration lives under: the home directory on Linux
+/// (dotfolder convention), the platform configuration directory elsewhere.
+pub fn base_config_dir() -> Option<PathBuf> {
+    #[cfg(target_os = "linux")]
+    return std::env::var_os("HOME").map(PathBuf::from);
+
+    #[cfg(target_os = "macos")]
+    return std::env::var_os("HOME").map(|home| {
+        PathBuf::from(home)
+            .join("Library")
+            .join("Application Support")
+    });
+
+    #[cfg(windows)]
+    return std::env::var_os("APPDATA").map(PathBuf::from);
+}
+
 /// Get the absolute path to the liana configuration folder.
 ///
 /// It's a "liana/<network>/" directory in the XDG standard configuration directory for
@@ -255,13 +272,7 @@ impl std::error::Error for ConfigError {}
 /// configuration file but for Linux the XDG specifoes a data directory (`~/.local/share/`)
 /// different from the configuration one (`~/.config/`).
 pub fn config_folder_path() -> Option<PathBuf> {
-    #[cfg(target_os = "linux")]
-    let configs_dir = dirs::home_dir();
-
-    #[cfg(not(target_os = "linux"))]
-    let configs_dir = dirs::config_dir();
-
-    if let Some(mut path) = configs_dir {
+    if let Some(mut path) = base_config_dir() {
         #[cfg(target_os = "linux")]
         path.push(".liana");
 

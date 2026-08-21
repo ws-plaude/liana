@@ -212,13 +212,7 @@ fn internal_bitcoind_address(rpc_port: u16) -> SocketAddr {
 }
 
 fn bitcoind_default_datadir() -> Option<PathBuf> {
-    #[cfg(target_os = "linux")]
-    let configs_dir = dirs::home_dir();
-
-    #[cfg(not(target_os = "linux"))]
-    let configs_dir = dirs::config_dir();
-
-    if let Some(mut path) = configs_dir {
+    if let Some(mut path) = lianad::config::base_config_dir() {
         #[cfg(target_os = "linux")]
         path.push(".bitcoin");
 

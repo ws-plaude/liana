@@ -29,7 +29,6 @@ miniscript = { workspace = true, features = ["serde", "compiler", "base64"] }
 bdk_electrum = { workspace = true, default-features = false, features = [ "use-rustls-ring" ] }
 
 # Don't reinvent the wheel
-dirs = { workspace = true }
 
 # We use TOML for the config, and JSON for RPC
 serde = { workspace = true, features = ["derive"] }
