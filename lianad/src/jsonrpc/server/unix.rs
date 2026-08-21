@@ -112,7 +112,7 @@ fn connection_handler(
             api::handle_request(&mut control, req).unwrap_or_else(|e| Response::error(req_id, e));
         log::trace!("JSONRPC response: {:?}", serde_json::to_string(&response));
         if let Err(e) = serde_json::to_writer(&stream, &response) {
-            log::error!("Error writing response: '{}'", e);
+            log::error!("Error writing response: '{e}'");
             return Ok(());
         }
     }
@@ -157,9 +157,9 @@ pub fn rpcserver_loop(
 
                 move || {
                     if let Err(e) = connection_handler(control, connection, shutdown) {
-                        log::error!("Error while handling connection {}: '{}'", handler_id, e);
+                        log::error!("Error while handling connection {handler_id}: '{e}'");
                     } else {
-                        log::trace!("Connection {} terminated without error.", handler_id);
+                        log::trace!("Connection {handler_id} terminated without error.");
                     }
                     counter.fetch_sub(1, atomic::Ordering::Relaxed);
                 }

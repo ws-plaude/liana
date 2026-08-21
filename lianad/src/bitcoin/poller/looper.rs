@@ -33,7 +33,7 @@ fn update_coins(
 ) -> UpdatedCoins {
     let network = db_conn.network();
     let curr_coins = db_conn.coins(&[], &[]);
-    log::debug!("Current coins: {:?}", curr_coins);
+    log::debug!("Current coins: {curr_coins:?}");
 
     // Start by fetching newly received coins.
     let mut received = Vec::new();
@@ -51,7 +51,7 @@ fn update_coins(
                 let address = match address.require_network(network) {
                     Ok(addr) => addr,
                     Err(e) => {
-                        log::error!("Invalid network for address: {}", e);
+                        log::error!("Invalid network for address: {e}");
                         continue;
                     }
                 };
@@ -95,7 +95,7 @@ fn update_coins(
             received.push(coin);
         }
     }
-    log::debug!("Newly received coins: {:?}", received);
+    log::debug!("Newly received coins: {received:?}");
 
     // We need to take the newly received ones into account as well, as they may have been
     // confirmed within the previous tip and the current one, and we may not poll this chunk of the
@@ -112,8 +112,8 @@ fn update_coins(
         })
         .collect();
     let (confirmed, expired) = bit.confirmed_coins(&to_be_confirmed);
-    log::debug!("Newly confirmed coins: {:?}", confirmed);
-    log::debug!("Expired coins: {:?}", expired);
+    log::debug!("Newly confirmed coins: {confirmed:?}");
+    log::debug!("Expired coins: {expired:?}");
 
     // We need to take the newly received ones into account as well, as they may have been
     // spent within the previous tip and the current one, and we may not poll this chunk of the
@@ -136,7 +136,7 @@ fn update_coins(
         })
         .collect();
     let spending = bit.spending_coins(&to_be_spent);
-    log::debug!("Newly spending coins: {:?}", spending);
+    log::debug!("Newly spending coins: {spending:?}");
 
     // Mark coins in a spending state whose Spend transaction was confirmed as such. Note we
     // need to take into account the freshly marked as spending coins as well, as their spend
@@ -149,7 +149,7 @@ fn update_coins(
         .chain(spending.iter().cloned())
         .collect();
     let (spent, expired_spending) = bit.spent_coins(spending_coins.as_slice());
-    log::debug!("Newly spent coins: {:?}", spent);
+    log::debug!("Newly spent coins: {spent:?}");
 
     UpdatedCoins {
         received,
@@ -179,7 +179,7 @@ fn add_txs_to_db(
 
     // Remove those txids we already have.
     let missing_txids = new_txids.difference(&curr_txids);
-    log::debug!("Missing txids: {:?}", missing_txids);
+    log::debug!("Missing txids: {missing_txids:?}");
 
     // Now retrieve txs.
     let txs: Vec<_> = missing_txids
@@ -224,16 +224,11 @@ fn new_tip(bit: &impl BitcoinInterface, current_tip: &BlockChainTip) -> TipUpdat
     log::info!("Block chain reorganization detected. Looking for common ancestor.");
     if let Some(common_ancestor) = bit.common_ancestor(current_tip) {
         log::info!(
-            "Common ancestor found: '{}'. Starting rescan from there. Old tip was '{}'.",
-            common_ancestor,
-            current_tip
+            "Common ancestor found: '{common_ancestor}'. Starting rescan from there. Old tip was '{current_tip}'."
         );
         TipUpdate::Reorged(common_ancestor)
     } else {
-        log::error!(
-            "Failed to get common ancestor for tip '{}'. Starting over.",
-            current_tip
-        );
+        log::error!("Failed to get common ancestor for tip '{current_tip}'. Starting over.");
         new_tip(bit, current_tip)
     }
 }
@@ -263,7 +258,7 @@ fn updates(
                     // The block chain was reorganized. Rollback our state down to the common ancestor
                     // between our former chain and the new one, then restart fresh.
                     db_conn.rollback_tip(&new_tip);
-                    log::info!("Tip was rolled back to '{}'.", new_tip);
+                    log::info!("Tip was rolled back to '{new_tip}'.");
                     return updates(db_conn, bit, descs, secp);
                 }
             }
@@ -288,7 +283,7 @@ fn updates(
             return updates(db_conn, bit, descs, secp);
         }
         Err(e) => {
-            log::error!("Error syncing wallet: '{}'.", e);
+            log::error!("Error syncing wallet: '{e}'.");
             thread::sleep(time::Duration::from_secs(2));
             return updates(db_conn, bit, descs, secp);
         }
@@ -320,7 +315,7 @@ fn updates(
     db_conn.update_coins_from_self(current_tip.height);
     if latest_tip != current_tip {
         db_conn.update_tip(&latest_tip);
-        log::debug!("New tip: '{}'", latest_tip);
+        log::debug!("New tip: '{latest_tip}'");
     }
 
     log::debug!("Updates done.");
@@ -355,18 +350,14 @@ fn rescan_check(
         let rescan_tip = match bit.block_before_date(timestamp) {
             Some(block) => block,
             None => {
-                log::error!(
-                    "Could not retrieve block height for timestamp '{}'",
-                    timestamp
-                );
+                log::error!("Could not retrieve block height for timestamp '{timestamp}'");
                 return;
             }
         };
         db_conn.rollback_tip(&rescan_tip);
         db_conn.complete_rescan();
         log::info!(
-            "Rolling back our internal tip to '{}' to update our internal state with past transactions.",
-            rescan_tip
+            "Rolling back our internal tip to '{rescan_tip}' to update our internal state with past transactions."
         );
         updates(db_conn, bit, descs, secp)
     } else {

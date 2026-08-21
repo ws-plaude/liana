@@ -374,7 +374,7 @@ fn get_bitcoind_log(log_path: PathBuf) -> impl Stream<Item = Option<String>> {
                 let mut file = match File::open(&log_path) {
                     Ok(file) => file,
                     Err(e) => {
-                        log::warn!("Opening bitcoind log file: {}", e);
+                        log::warn!("Opening bitcoind log file: {e}");
                         continue;
                     }
                 };
@@ -386,12 +386,12 @@ fn get_bitcoind_log(log_path: PathBuf) -> impl Stream<Item = Option<String>> {
                             if let Err(e) =
                                 file.seek(SeekFrom::Start(file_len.saturating_sub(offset)))
                             {
-                                log::error!("Seeking to end of bitcoind log file: {}", e);
+                                log::error!("Seeking to end of bitcoind log file: {e}");
                             }
                         }
                     }
                     Err(e) => {
-                        log::error!("Getting bitcoind log file metadata: {}", e);
+                        log::error!("Getting bitcoind log file metadata: {e}");
                     }
                 };
 
@@ -414,7 +414,7 @@ fn get_bitcoind_log(log_path: PathBuf) -> impl Stream<Item = Option<String>> {
                     }
                     res => {
                         if let Some(Err(e)) = res {
-                            log::error!("Reading bitcoind log file: {}", e);
+                            log::error!("Reading bitcoind log file: {e}");
                         } else {
                             log::warn!("Couldn't find an UpdateTip line in bitcoind log file.");
                         }

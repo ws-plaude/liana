@@ -63,7 +63,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     .window(window_settings)
     .run()
     {
-        log::error!("{}", e);
+        log::error!("{e}");
         Err(format!("Failed to launch UI: {e}").into())
     } else {
         Ok(())

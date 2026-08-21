@@ -113,7 +113,7 @@ impl Poller {
                         log::warn!("Skipped poll as block chain is still synchronizing.");
                     }
                     if let Err(e) = sender.send(()) {
-                        log::error!("Error sending immediate poll completion signal: {}.", e);
+                        log::error!("Error sending immediate poll completion signal: {e}.");
                     }
                     continue;
                 }

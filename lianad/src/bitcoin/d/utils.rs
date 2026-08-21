@@ -30,7 +30,7 @@ where
     Fh: FnMut(i32) -> Option<bitcoin::BlockHash>,
     Fs: FnMut(bitcoin::BlockHash) -> Option<BlockStats>,
 {
-    log::debug!("Looking for the first block before {}", target_timestamp);
+    log::debug!("Looking for the first block before {target_timestamp}");
 
     let mut start_height = 0;
     let mut end_height = chain_tip.height;
@@ -42,13 +42,13 @@ where
     }
 
     while start_height < end_height {
-        log::debug!("Start: {}, end: {}", start_height, end_height,);
+        log::debug!("Start: {start_height}, end: {end_height}",);
         let delta = end_height.checked_sub(start_height).unwrap();
         let current_height = start_height + delta.checked_div(2).unwrap();
         // We want the last block with a timestamp below, not the first with a higher one.
         let next_height = current_height.checked_add(1).unwrap();
         let next_stats = get_stats(get_hash(next_height)?)?;
-        log::debug!("Current next block: {:?}", next_stats);
+        log::debug!("Current next block: {next_stats:?}");
 
         if target_timestamp > next_stats.time {
             start_height = next_height;
@@ -61,7 +61,7 @@ where
     // TODO: the timestamps in the chain are not strictly ordered. There could technically be a
     // timestamp above the target a bit down this height. I think we would be safe by scanning the
     // last 12 blocks and checking their timestamp is below the target. Would we?
-    log::debug!("Result height: {}", start_height);
+    log::debug!("Result height: {start_height}");
     Some(BlockChainTip {
         height: start_height,
         hash: get_hash(start_height)?,
