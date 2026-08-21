@@ -15,10 +15,6 @@ ignore = [
     "RUSTSEC-2026-0194",
     "RUSTSEC-2026-0195",
 
-    # serde_cbor is unmaintained and reaches us through bwk-hwi's jade
-    # support. Replacing it is part of the hardware wallet work.
-    "RUSTSEC-2021-0127",
-
     # Unmaintained, no replacement available, both pulled in transitively:
     # paste by several proc macro users, ttf-parser by the text stack.
     "RUSTSEC-2024-0436",
