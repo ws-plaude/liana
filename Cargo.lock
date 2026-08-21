@@ -738,9 +738,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c673075a2e0e5f4a1dde27ce9dee1ea4558c7ffe648f576438a20ca1d2acc4b0"
 dependencies = [
  "iana-time-zone",
- "js-sys",
  "num-traits",
- "wasm-bindgen",
  "windows-link",
 ]
 
@@ -2103,12 +2101,9 @@ version = "0.13.1"
 source = "git+https://github.com/wizardsardine/iced_aw?rev=488248db097769cd2269af75b5f93d5c65f45a38#488248db097769cd2269af75b5f93d5c65f45a38"
 dependencies = [
  "cfg-if",
- "chrono",
  "iced_core",
  "iced_fonts",
  "iced_widget",
- "num-format",
- "num-traits",
  "web-time",
 ]
 
@@ -3229,16 +3224,6 @@ checksum = "a5e44f723f1133c9deac646763579fdb3ac745e418f2a7af9cd0c431da1f20b9"
 dependencies = [
  "num-integer",
  "num-traits",
-]
-
-[[package]]
-name = "num-format"
-version = "0.4.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a652d9771a63711fd3c3deb670acfbe5c30a4072e664d7a3bf5a9e1056ac72c3"
-dependencies = [
- "arrayvec",
- "itoa",
 ]
 
 [[package]]
