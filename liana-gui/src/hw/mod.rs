@@ -470,7 +470,7 @@ fn poll_devices(state: &mut State) -> HardwareWalletMessage {
                             warn!("{}", e);
                         }
                         Ok(device) => {
-                            if device.fingerprint().is_ok() {
+                            if device.probe().is_ok() {
                                 match HardwareWallet::new(
                                     id,
                                     Arc::new(device),
