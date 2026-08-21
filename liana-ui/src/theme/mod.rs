@@ -19,7 +19,6 @@ pub mod radio;
 pub mod rule;
 pub mod scrollable;
 pub mod slider;
-pub mod svg;
 pub mod text;
 pub mod text_input;
 pub mod toggler;

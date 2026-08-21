@@ -29,7 +29,7 @@ pub type ProgressBar<'a> = iced::widget::ProgressBar<'a, Theme>;
 pub type PickList<'a, T, L, V, Message> =
     iced::widget::PickList<'a, T, L, V, Message, Theme, Renderer>;
 pub type Scrollable<'a, Message> = iced::widget::Scrollable<'a, Message, Theme, Renderer>;
-pub type Svg<'a> = iced::widget::Svg<'a, Theme>;
+pub type Image = iced::widget::Image<iced::widget::image::Handle>;
 
 /// Extension trait to restore `push_maybe` for `Column`, removed in iced 0.14.
 pub trait ColumnExt<'a, Message> {
