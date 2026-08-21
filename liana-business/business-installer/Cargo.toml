@@ -12,7 +12,7 @@ default = ["debugger"]
 debugger = ["liana-gui/debugger"]
 
 [dependencies]
-crossbeam = { version = "0.8.4", features = ["crossbeam-channel"] }
+crossbeam-channel = "0.5"
 reqwest = { workspace = true, features = ["json", "blocking"] }
 tokio = { workspace = true, features = ["rt"] }
 iced = { workspace = true, default-features = false, features = ["tokio", "image-without-codecs", "wgpu", "tiny-skia", "x11", "wayland"] }

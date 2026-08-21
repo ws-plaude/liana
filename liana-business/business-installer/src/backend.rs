@@ -1,5 +1,5 @@
 use crate::Message;
-use crossbeam::channel;
+use crossbeam_channel as channel;
 use iced::futures::Stream;
 use liana_connect::ws_business::{Org, RegistrationInfos, User, Wallet, WssError, Xpub};
 use std::{

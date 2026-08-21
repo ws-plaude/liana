@@ -8,7 +8,7 @@ use crate::{
     },
 };
 use async_hwi::{bitbox::NoiseConfig, service::HwiService};
-use crossbeam::channel;
+use crossbeam_channel as channel;
 use liana_connect::ws_business::{self, KeyIdentity, Wallet};
 use liana_gui::{app::settings::global::PersistedBitboxNoiseConfig, dir::LianaDirectory};
 use liana_ui::widget::{modal::Modal, Element};

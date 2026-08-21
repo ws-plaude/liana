@@ -2,7 +2,7 @@ use crate::state::{
     views::login::{Login, LoginState},
     Msg as Message, SharedWaker, State,
 };
-use crossbeam::channel::{self};
+use crossbeam_channel as channel;
 use iced::{
     event,
     keyboard::{self, key::Named},

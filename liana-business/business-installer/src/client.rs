@@ -5,7 +5,7 @@ use crate::{
     backend::{Backend, Error, Notification},
     state::Message,
 };
-use crossbeam::channel;
+use crossbeam_channel as channel;
 use liana_connect::ws_business::{self, Org, Request, Response, User, UserRole, Wallet};
 use liana_gui::{
     dir::{LianaDirectory, NetworkDirectory},
