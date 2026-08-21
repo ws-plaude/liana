@@ -1,4 +1,5 @@
 use liana_connect::ws_business;
+use liana_gui::file_picker;
 use uuid::Uuid;
 
 use crate::state::views::paths;
@@ -122,6 +123,9 @@ pub enum Msg {
     // Warnings
     WarningShowModal(String, String), // Show warning modal (title, message)
     WarningCloseModal,                // Close warning modal
+
+    // File picker
+    FilePicker(file_picker::Message), // Browse, select, confirm or cancel in the file picker
 
     // Conflict resolution
     ConflictReload,    // User chose to reload from server

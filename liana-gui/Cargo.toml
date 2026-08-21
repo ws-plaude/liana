@@ -30,7 +30,7 @@ iced = { workspace = true, default-features = false, features = ["tokio", "qr_co
 iced_aw = { workspace = true, features = ["context_menu"] }
 iced_runtime = { workspace = true }
 
-tokio = { workspace = true, features = ["signal"] }
+tokio = { workspace = true, features = ["fs", "io-util", "rt", "signal", "sync", "time"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 
@@ -48,7 +48,6 @@ toml = { workspace = true }
 libc = { workspace = true }
 base64 = { workspace = true }
 minreq = { workspace = true }
-rfd = { workspace = true }
 fs2 = { workspace = true }
 encrypted_backup = { workspace = true }
 

@@ -115,7 +115,7 @@ impl Step for ShareXpubs {
             }
             Message::ExportXpub(xpub_str) => {
                 if self.modal.is_none() {
-                    let modal = ExportModal::new(None, ImportExportType::ExportXpub(xpub_str));
+                    let mut modal = ExportModal::new(None, ImportExportType::ExportXpub(xpub_str));
                     let launch = modal.launch(true);
                     self.modal = Some(modal);
                     return launch;

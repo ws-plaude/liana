@@ -1,3 +1,5 @@
+use std::{fs, path::Path};
+
 use super::{
     fetch_key_modal_signer_users,
     message::{HardwareWalletRequestId, Msg},
@@ -16,7 +18,10 @@ use liana_connect::ws_business::{
     self, Key, KeyIdentity, PolicyTemplate, SecondaryPath, SpendingPath, Timelock, UserRole,
     Wallet, WalletStatus, BLOCKS_PER_DAY,
 };
-use liana_gui::hw::AsyncDevice;
+use liana_gui::{
+    file_picker::{self, FilePicker, Outcome},
+    hw::AsyncDevice,
+};
 use liana_ui::widget::text_input;
 use miniscript::bitcoin::bip32::Fingerprint;
 use tracing::{debug, error, trace};
@@ -32,6 +37,22 @@ fn navigate_back_target(current_view: View) -> Option<View> {
         View::OrgSelect => Some(View::Login),
         View::Login | View::Loading => None,
     }
+}
+
+/// Read an xpub from a file, taking its first non-empty line. Returns the xpub and the file name.
+fn read_xpub_file(path: &Path) -> Result<(String, String), String> {
+    let content = fs::read_to_string(path).map_err(|e| format!("Failed to read file: {e}"))?;
+    let xpub = content
+        .lines()
+        .find(|line| !line.trim().is_empty())
+        .ok_or_else(|| "File is empty".to_string())?
+        .trim()
+        .to_string();
+    let name = path
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_default();
+    Ok((xpub, name))
 }
 
 // Update routing logic
@@ -134,7 +155,8 @@ impl State {
                 return self.on_xpub_fetch_from_device(fingerprint, account, request_id)
             }
             Msg::XpubRetry => return self.on_xpub_retry(),
-            Msg::XpubLoadFromFile => return self.on_xpub_load_from_file(),
+            Msg::XpubLoadFromFile => self.on_xpub_load_from_file(),
+            Msg::FilePicker(m) => return self.on_file_picker(m),
             Msg::XpubFileLoaded(result) => self.on_xpub_file_loaded(result),
             Msg::XpubSelectPaste => self.on_xpub_select_paste(),
             Msg::XpubPaste => return self.on_xpub_paste(),
@@ -1909,61 +1931,29 @@ impl State {
     }
 
     /// Trigger file picker for xpub
-    fn on_xpub_load_from_file(&mut self) -> Task<Msg> {
-        // Use async file dialog by spawning a thread with Tokio runtime
-        // This avoids "no reactor running" panic with Iced's ThreadPool executor
-        let (tx, rx) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            let result = rt.block_on(async {
-                let file_handle = rfd::AsyncFileDialog::new()
-                    .set_title("Select xpub file")
-                    .add_filter("Text files", &["txt"])
-                    .add_filter("All files", &["*"])
-                    .pick_file()
-                    .await;
+    fn on_xpub_load_from_file(&mut self) {
+        self.views.modals.file_picker = Some(FilePicker::open(
+            FilePicker::default_dir(),
+            Some("txt".to_string()),
+        ));
+    }
 
-                if let Some(handle) = file_handle {
-                    let filename = handle.file_name();
-                    // Read the file content
-                    match tokio::fs::read_to_string(handle.path()).await {
-                        Ok(content) => {
-                            // Get the first non-empty line as xpub
-                            let xpub = content
-                                .lines()
-                                .find(|line| !line.trim().is_empty())
-                                .unwrap_or("")
-                                .trim()
-                                .to_string();
-                            Ok((xpub, filename))
-                        }
-                        Err(e) => Err(format!("Failed to read file: {e}")),
-                    }
-                } else {
-                    // User cancelled - return empty error to do nothing
-                    Err(String::new())
-                }
-            });
-            let _ = tx.send(result);
-        });
-
-        // Poll the channel for the result
-        Task::perform(
-            async move {
-                // Block until result is available
-                rx.recv().unwrap_or_else(|_| {
-                    Err("Failed to receive result from file dialog thread".to_string())
-                })
-            },
-            |result| {
-                // Only send message if there was an actual error (non-empty)
-                match result {
-                    Ok((xpub, filename)) => Msg::XpubFileLoaded(Ok((xpub, filename))),
-                    Err(e) if !e.is_empty() => Msg::XpubFileLoaded(Err(e)),
-                    Err(_) => Msg::XpubFileLoaded(Err(String::new())), // User cancelled
-                }
-            },
-        )
+    /// Handle browsing, selection and confirmation in the file picker
+    fn on_file_picker(&mut self, message: file_picker::Message) -> Task<Msg> {
+        let Some(picker) = &mut self.views.modals.file_picker else {
+            return Task::none();
+        };
+        match picker.update(message) {
+            Some(Outcome::Chosen(path)) => {
+                self.views.modals.file_picker = None;
+                Task::done(Msg::XpubFileLoaded(read_xpub_file(&path)))
+            }
+            Some(Outcome::Cancelled) => {
+                self.views.modals.file_picker = None;
+                Task::none()
+            }
+            None => Task::none(),
+        }
     }
 
     /// Handle file loaded result
@@ -1979,12 +1969,8 @@ impl State {
                     modal.update_input(content);
                     modal.input_source = Some(views::XpubInputSource::File { name: filename });
                 }
-                Err(error) if !error.is_empty() => {
-                    // Log error (user cancelled shows empty string)
+                Err(error) => {
                     debug!(error = %error, "Failed to load xpub file");
-                }
-                Err(_) => {
-                    // User cancelled - do nothing
                 }
             }
         }

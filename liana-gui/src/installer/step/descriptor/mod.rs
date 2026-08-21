@@ -113,7 +113,7 @@ impl Step for ImportDescriptor {
             }
             Message::ImportBackup => {
                 self.imported_backup = None;
-                let modal = ExportModal::new(None, ImportExportType::FromBackup);
+                let mut modal = ExportModal::new(None, ImportExportType::FromBackup);
                 let launch = modal.launch(false);
                 self.modal = ImportDescriptorModal::Export(modal);
                 Some(launch)
@@ -483,7 +483,7 @@ impl Step for BackupDescriptor {
                             return Task::none();
                         }
                     };
-                    let modal =
+                    let mut modal =
                         ExportModal::new(None, ImportExportType::ExportEncryptedDescriptor(bytes));
                     let launch = modal.launch(true);
                     self.modal = Some(modal);

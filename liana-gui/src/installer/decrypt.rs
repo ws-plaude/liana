@@ -280,7 +280,7 @@ impl DecryptModal {
             Decrypt::SelectImportXpub => {
                 self.focus = Focus::ImportXpub;
                 self.import_xpub_error = None;
-                let modal = ExportModal::new(None, ImportExportType::ImportXpub(self.network));
+                let mut modal = ExportModal::new(None, ImportExportType::ImportXpub(self.network));
                 let launch = modal.launch(false);
                 self.modal = Some(modal);
                 launch

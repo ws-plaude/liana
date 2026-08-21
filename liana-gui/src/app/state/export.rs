@@ -13,7 +13,8 @@ use crate::{
         view::{export::export_modal, Close},
     },
     daemon::Daemon,
-    export::{self, get_path, ImportExportMessage, ImportExportState, ImportExportType, Progress},
+    export::{self, ImportExportMessage, ImportExportState, ImportExportType, Progress},
+    file_picker::{FilePicker, Outcome},
 };
 
 #[derive(Debug)]
@@ -24,6 +25,8 @@ pub struct ExportModal {
     error: Option<export::Error>,
     daemon: Option<Arc<dyn Daemon + Sync + Send>>,
     import_export_type: ImportExportType,
+    /// Shown instead of the export view while the user is choosing the path.
+    file_picker: Option<FilePicker>,
 }
 
 impl app::state::psbt::Modal for ExportModal {
@@ -67,6 +70,7 @@ impl ExportModal {
             error: None,
             daemon,
             import_export_type: export_type,
+            file_picker: None,
         }
     }
 
@@ -117,10 +121,18 @@ impl ExportModal {
         }
     }
 
-    pub fn launch<M: From<ImportExportMessage> + Send + 'static>(&self, write: bool) -> Task<M> {
-        Task::perform(get_path(self.default_filename(), write), move |m| {
-            ImportExportMessage::Path(m).into()
-        })
+    /// Show the file picker so the user chooses the path to import from or export to.
+    pub fn launch<M: From<ImportExportMessage> + Send + 'static>(
+        &mut self,
+        write: bool,
+    ) -> Task<M> {
+        let start_dir = FilePicker::default_dir();
+        self.file_picker = Some(if write {
+            FilePicker::save(start_dir, self.default_filename())
+        } else {
+            FilePicker::open(start_dir, None)
+        });
+        Task::none()
     }
 
     pub fn update<M: From<ImportExportMessage> + Send + 'static>(
@@ -198,6 +210,17 @@ impl ExportModal {
             }
             ImportExportMessage::UserStop => {
                 self.stop(ImportExportState::Aborted);
+            }
+            ImportExportMessage::FilePicker(m) => {
+                if let Some(picker) = &mut self.file_picker {
+                    let path = match picker.update(m) {
+                        Some(Outcome::Chosen(path)) => Some(path),
+                        Some(Outcome::Cancelled) => None,
+                        None => return Task::none(),
+                    };
+                    self.file_picker = None;
+                    return Task::done(ImportExportMessage::Path(path).into());
+                }
             }
             ImportExportMessage::Path(p) => {
                 if let Some(path) = p {
@@ -282,15 +305,18 @@ impl ExportModal {
     where
         M: 'a + Close + Clone + From<export::ImportExportMessage> + 'static,
     {
-        let modal = Modal::new(
-            content,
-            export_modal(
+        let overlay = match &self.file_picker {
+            Some(picker) => picker
+                .view()
+                .map(|m| ImportExportMessage::FilePicker(m).into()),
+            None => export_modal(
                 &self.state,
                 self.error.as_ref(),
                 self.modal_title(),
                 &self.import_export_type,
             ),
-        );
+        };
+        let modal = Modal::new(content, overlay);
         match self.state {
             ImportExportState::TimedOut
             | ImportExportState::Aborted

@@ -277,7 +277,7 @@ impl State for WalletSettingsState {
             )) => {
                 if self.modal.is_none() {
                     let descriptor = self.wallet.main_descriptor.clone();
-                    let modal = ExportModal::new(
+                    let mut modal = ExportModal::new(
                         Some(daemon),
                         ImportExportType::ExportEncryptedDescriptor(Box::new(descriptor)),
                     );

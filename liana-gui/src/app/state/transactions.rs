@@ -273,7 +273,7 @@ impl State for TransactionsPanel {
                         Some(daemon),
                         ImportExportType::Transactions,
                     ));
-                    if let TransactionsModal::Export(m) = &self.modal {
+                    if let TransactionsModal::Export(m) = &mut self.modal {
                         return m.launch(true);
                     }
                 }

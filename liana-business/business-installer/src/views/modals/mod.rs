@@ -3,6 +3,7 @@ pub mod template_help;
 pub mod warning;
 
 use crate::state::{Msg, State};
+use liana_gui::file_picker;
 use liana_ui::widget::{modal::Modal, Element};
 use liana_ui::{component::text, theme, widget::Text};
 
@@ -10,7 +11,21 @@ pub fn installer_modal<'a>(message: &'a str) -> Text<'a> {
     text::new::caption(message).style(theme::text::secondary)
 }
 
+/// The file picker always sits on top: it is opened from whatever modal is already showing.
 pub fn modals_view(state: &State) -> Option<Element<'_, Msg>> {
+    let stack = modal_stack(state);
+    let Some(picker) = &state.views.modals.file_picker else {
+        return stack;
+    };
+    let picker = picker.view().map(Msg::FilePicker);
+    let cancel = Msg::FilePicker(file_picker::Message::Cancel);
+    Some(match stack {
+        Some(under) => Modal::new(under, picker).on_blur(Some(cancel)).into(),
+        None => picker,
+    })
+}
+
+fn modal_stack(state: &State) -> Option<Element<'_, Msg>> {
     // First, get the underlying modal (key, path, xpub, or registration modal)
     let underlying_modal = crate::views::keys::modal::key_modal_view(state)
         .or_else(|| crate::views::paths::modal::path_modal_view(state))

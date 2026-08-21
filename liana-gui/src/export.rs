@@ -45,6 +45,7 @@ use crate::{
         Daemon, DaemonBackend, DaemonError,
     },
     dir::{LianaDirectory, NetworkDirectory},
+    file_picker,
     node::bitcoind::Bitcoind,
     services::connect::client::backend::DEFAULT_LIMIT,
     utils::now,
@@ -82,6 +83,7 @@ pub enum ImportExportMessage {
     TimedOut,
     UserStop,
     Path(Option<PathBuf>),
+    FilePicker(file_picker::Message),
     Close,
     Overwrite,
     Ignore,
@@ -1345,24 +1347,6 @@ pub async fn export_labels(
     send_progress!(sender, Progress(100.0));
     send_progress!(sender, Ended);
     Ok(())
-}
-
-pub async fn get_path(filename: String, write: bool) -> Option<PathBuf> {
-    if write {
-        rfd::AsyncFileDialog::new()
-            .set_title("Choose a location to export...")
-            .set_file_name(filename)
-            .save_file()
-            .await
-            .map(|fh| fh.path().to_path_buf())
-    } else {
-        rfd::AsyncFileDialog::new()
-            .set_title("Choose a file to import...")
-            .set_file_name(filename)
-            .pick_file()
-            .await
-            .map(|fh| fh.path().to_path_buf())
-    }
 }
 
 pub async fn app_backup(

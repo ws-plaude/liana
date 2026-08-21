@@ -138,7 +138,7 @@ impl PsbtState {
             Message::View(view::Message::ExportPsbt) => {
                 if self.modal.is_none() {
                     let psbt_str = self.tx.psbt.to_string();
-                    let modal = ExportModal::new(None, ImportExportType::ExportPsbt(psbt_str));
+                    let mut modal = ExportModal::new(None, ImportExportType::ExportPsbt(psbt_str));
                     let launch = modal.launch(true);
                     self.modal = Some(PsbtModal::Export(modal));
                     return launch;
@@ -146,7 +146,7 @@ impl PsbtState {
             }
             Message::View(view::Message::ImportPsbt) => {
                 if self.modal.is_none() {
-                    let modal = ExportModal::new(
+                    let mut modal = ExportModal::new(
                         Some(daemon.clone()),
                         ImportExportType::ImportPsbt(Some(self.tx.psbt.unsigned_tx.compute_txid())),
                     );

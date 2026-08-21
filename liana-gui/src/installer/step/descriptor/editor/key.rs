@@ -482,7 +482,7 @@ impl SelectKeySource {
         self.focus = Focus::LoadXpubFromFile;
         self.import_xpub_error = None;
         if self.modal.is_none() {
-            let modal = ExportModal::new(None, ImportExportType::ImportXpub(self.network));
+            let mut modal = ExportModal::new(None, ImportExportType::ImportXpub(self.network));
             let launch = modal.launch(false);
             self.modal = Some(modal);
             return launch;
