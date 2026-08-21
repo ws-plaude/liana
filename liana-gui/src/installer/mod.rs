@@ -1010,7 +1010,7 @@ pub enum Error {
     CannotWriteToFile(String),
     CannotGetAvailablePort(String),
     Unexpected(String),
-    HardwareWallet(async_hwi::Error),
+    HardwareWallet(bwk_hwi::Error),
     Backup(encrypted_backup::Error),
 }
 
@@ -1026,8 +1026,8 @@ impl From<jsonrpc::Error> for Error {
     }
 }
 
-impl From<async_hwi::Error> for Error {
-    fn from(error: async_hwi::Error) -> Self {
+impl From<bwk_hwi::Error> for Error {
+    fn from(error: bwk_hwi::Error) -> Self {
         Error::HardwareWallet(error)
     }
 }

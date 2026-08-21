@@ -85,7 +85,7 @@ pub enum Msg {
     BackendDisconnected,                        // Backend connection lost
 
     // Hardware Wallets
-    HardwareWallets(async_hwi::service::SigningDeviceMsg<HardwareWalletRequestId>), // Hardware wallet service message
+    HardwareWallets(bwk_hwi::service::SigningDeviceMsg<HardwareWalletRequestId>), // Hardware wallet service message
 
     // Xpub management
     XpubSelectKey(u8),                                          // Open modal for key
@@ -111,7 +111,7 @@ pub enum Msg {
 
     // Registration (device descriptor registration)
     RegistrationSelectDevice(miniscript::bitcoin::bip32::Fingerprint), // Click on connected device to register
-    RegistrationResult(Result<(miniscript::bitcoin::bip32::Fingerprint, Option<[u8; 32]>, String), String>), // async-hwi result (fp, hmac, alias)
+    RegistrationResult(Result<(miniscript::bitcoin::bip32::Fingerprint, Option<[u8; 32]>, String), String>), // bwk-hwi result (fp, hmac, alias)
     RegistrationCancelModal,                                           // Close registration modal
     RegistrationRetry,                                                 // Retry after error
     RegistrationConfirmYes,                                            // User confirms Coldcard registration succeeded
@@ -136,8 +136,8 @@ pub enum Msg {
 pub type Message = Msg;
 
 /// Required by HwiService<Message> to send notifications through the shared channel
-impl From<async_hwi::service::SigningDeviceMsg<HardwareWalletRequestId>> for Msg {
-    fn from(msg: async_hwi::service::SigningDeviceMsg<HardwareWalletRequestId>) -> Self {
+impl From<bwk_hwi::service::SigningDeviceMsg<HardwareWalletRequestId>> for Msg {
+    fn from(msg: bwk_hwi::service::SigningDeviceMsg<HardwareWalletRequestId>) -> Self {
         Msg::HardwareWallets(msg)
     }
 }

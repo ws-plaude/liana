@@ -280,7 +280,7 @@ Token cache location: `~/.liana/<network>/connect.json`
 | iced           | UI framework                                     |
 | tungstenite    | WebSocket client                                 |
 | crossbeam      | Thread communication                             |
-| async-hwi      | Hardware wallet detection                        |
+| bwk-hwi      | Hardware wallet detection                        |
 +----------------+--------------------------------------------------+
 ```
 

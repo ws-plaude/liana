@@ -12,7 +12,7 @@ use std::{
 use encrypted_backup::{descriptor::dpk_to_pk, Decrypted, EncryptedBackup};
 use tokio::sync::mpsc::{channel, unbounded_channel, Sender, UnboundedReceiver, UnboundedSender};
 
-use async_hwi::bitbox::api::btc::Fingerprint;
+use bwk_hwi::bitbox::api::btc::Fingerprint;
 use liana::{
     descriptors::{bip341_nums, LianaDescriptor},
     miniscript::{

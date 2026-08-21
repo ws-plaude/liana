@@ -18,7 +18,7 @@ pub enum RegistrationModalStep {
 #[derive(Debug, Clone)]
 pub struct RegistrationModalState {
     pub fingerprint: Fingerprint,
-    pub device_kind: Option<async_hwi::DeviceKind>,
+    pub device_kind: Option<bwk_hwi::DeviceKind>,
     pub step: RegistrationModalStep,
     pub error: Option<String>,
 }
@@ -82,7 +82,7 @@ impl RegistrationViewState {
     pub fn open_modal(
         &mut self,
         fingerprint: Fingerprint,
-        device_kind: Option<async_hwi::DeviceKind>,
+        device_kind: Option<bwk_hwi::DeviceKind>,
     ) {
         self.modal = Some(RegistrationModalState {
             fingerprint,

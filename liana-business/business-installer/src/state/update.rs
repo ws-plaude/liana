@@ -16,6 +16,7 @@ use liana_connect::ws_business::{
     self, Key, KeyIdentity, PolicyTemplate, SecondaryPath, SpendingPath, Timelock, UserRole,
     Wallet, WalletStatus, BLOCKS_PER_DAY,
 };
+use liana_gui::hw::AsyncDevice;
 use liana_ui::widget::text_input;
 use miniscript::bitcoin::bip32::Fingerprint;
 use tracing::{debug, error, trace};
@@ -1710,12 +1711,12 @@ impl State {
 
 // Hardware wallet handlers
 impl State {
-    /// Handle hardware wallet messages from async-hwi service
+    /// Handle hardware wallet messages from bwk-hwi service
     fn on_hw_message(
         &mut self,
-        msg: async_hwi::service::SigningDeviceMsg<HardwareWalletRequestId>,
+        msg: bwk_hwi::service::SigningDeviceMsg<HardwareWalletRequestId>,
     ) -> Task<Msg> {
-        use async_hwi::service::SigningDeviceMsg;
+        use bwk_hwi::service::SigningDeviceMsg;
         use miniscript::bitcoin::bip32::DerivationPath;
         use miniscript::descriptor::{DescriptorPublicKey, DescriptorXKey, Wildcard};
 
@@ -1730,10 +1731,10 @@ impl State {
                     if dev.fingerprint() == Some(fingerprint) {
                         let kind = format!("{:?}", dev.kind());
                         let version = match dev {
-                            async_hwi::service::SigningDevice::Supported(s) => {
+                            bwk_hwi::service::SigningDevice::Supported(s) => {
                                 s.version().map(|v| v.to_string())
                             }
-                            async_hwi::service::SigningDevice::Unsupported { version, .. } => {
+                            bwk_hwi::service::SigningDevice::Unsupported { version, .. } => {
                                 version.clone().map(|v| v.to_string())
                             }
                             _ => None,
@@ -1854,7 +1855,7 @@ impl State {
         account: miniscript::bitcoin::bip32::ChildNumber,
         request_id: HardwareWalletRequestId,
     ) -> Task<Msg> {
-        use async_hwi::service::SigningDevice;
+        use bwk_hwi::service::SigningDevice;
         #[allow(unused_imports)]
         use miniscript::bitcoin::bip32::{ChildNumber, DerivationPath};
 
@@ -2160,7 +2161,7 @@ impl State {
         &mut self,
         fingerprint: miniscript::bitcoin::bip32::Fingerprint,
     ) -> Task<Msg> {
-        use async_hwi::service::SigningDevice;
+        use bwk_hwi::service::SigningDevice;
 
         debug!("on_registration_select_device: fingerprint={}", fingerprint);
 
@@ -2227,9 +2228,9 @@ impl State {
         );
 
         // Clone device handle for async task
-        let hw_arc = hw.device().clone();
+        let device = AsyncDevice::new(hw.device().clone());
 
-        // Start registration via async-hwi
+        // Start registration via bwk-hwi
         Task::perform(
             async move {
                 trace!(
@@ -2237,7 +2238,7 @@ impl State {
                     wallet_name,
                     descriptor.len()
                 );
-                match hw_arc.register_wallet(&wallet_name, &descriptor).await {
+                match device.register_wallet(&wallet_name, &descriptor).await {
                     Ok(hmac) => {
                         debug!(
                             "register_wallet: success for fingerprint={}, hmac={:?}",
@@ -2259,7 +2260,7 @@ impl State {
         )
     }
 
-    /// Handle registration result from async-hwi
+    /// Handle registration result from bwk-hwi
     fn on_registration_result(
         &mut self,
         result: Result<
@@ -2290,7 +2291,7 @@ impl State {
                     .modal
                     .as_ref()
                     .and_then(|m| m.device_kind)
-                    .map(|k| matches!(k, async_hwi::DeviceKind::Coldcard))
+                    .map(|k| matches!(k, bwk_hwi::DeviceKind::Coldcard))
                     .unwrap_or(false);
 
                 if is_coldcard {

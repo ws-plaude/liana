@@ -66,7 +66,7 @@ bip39 = "2.0"
 fern = "0.6"
 bip329 = { version = "0.3.0", default-features = false }
 async-trait = "0.1"
-async-hwi = "0.0.32"
+bwk-hwi = { git = "https://github.com/ws-plaude/bwk", rev = "f8ee45e2a863faf5fbf5152bc83446742bd47285", default-features = false, features = ["ledger", "specter", "coldcard", "bitbox", "jade", "minreq", "service"] }
 hex = "0.4.3"
 tokio = "1.21.0"
 tracing = "0.1.37"
@@ -98,8 +98,6 @@ iced_wgpu = { git = "https://github.com/wizardsardine/iced", rev = "ccf011541eff
 iced_tiny_skia = { git = "https://github.com/wizardsardine/iced", rev = "ccf011541eff660ed2bc6a01f9f00e150b501453" }
 iced_program = { git = "https://github.com/wizardsardine/iced", rev = "ccf011541eff660ed2bc6a01f9f00e150b501453" }
 iced_debug = { git = "https://github.com/wizardsardine/iced", rev = "ccf011541eff660ed2bc6a01f9f00e150b501453" }
-# Fork carrying the reqwest 0.12 bump, the inlined ledger transport and crossbeam-channel.
-async-hwi = { git = "https://github.com/ws-plaude/async-hwi", rev = "ab548d64fa369f86c67c6eb5ea9e8446c0e54d85" }
 # iced_aw constructs Border literals exhaustively, so it needs the same fork's Border style field.
 iced_aw = { git = "https://github.com/wizardsardine/iced_aw", rev = "488248db097769cd2269af75b5f93d5c65f45a38" }
 # Fork pinning rustls to the ring provider, upstream defaults to aws-lc which builds a C library.

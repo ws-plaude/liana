@@ -978,7 +978,7 @@ mod tests {
             name: "My Specter key".to_string(),
             fingerprint: key.master_fingerprint(),
             key,
-            source: KeySource::Device(async_hwi::DeviceKind::Specter, None),
+            source: KeySource::Device(bwk_hwi::DeviceKind::Specter, None),
             account: None,
         };
 

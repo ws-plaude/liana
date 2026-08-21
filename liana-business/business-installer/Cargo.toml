@@ -28,7 +28,7 @@ uuid = { workspace = true, features = ["v4"] }
 tungstenite = { workspace = true, features = ["rustls-tls-webpki-roots"] }
 url = { workspace = true }
 rustls = { workspace = true, features = ["ring"] }
-async-hwi = { workspace = true, features = ["service", "ledger", "jade", "coldcard", "bitbox", "specter"] }
+bwk-hwi = { workspace = true, features = ["service", "ledger", "jade", "coldcard", "bitbox", "specter"] }
 tracing = { workspace = true }
 rfd = { workspace = true }
 futures = "0.3"

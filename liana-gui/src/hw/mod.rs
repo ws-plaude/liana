@@ -1,4 +1,5 @@
-use iced::Task;
+pub mod device;
+
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
@@ -8,16 +9,22 @@ use crate::{
     app::{settings, wallet::Wallet},
     dir::LianaDirectory,
 };
-use async_hwi::{
-    bitbox::{api::runtime, BitBox02, PairingBitbox02},
+use bwk_hwi::{
+    bitbox::{BitBox02, PairingBitbox02},
     coldcard,
     jade::{self, Jade},
     ledger, specter, DeviceKind, Error as HWIError, Version, HWI,
 };
-use iced::futures::{SinkExt, Stream};
+use device::run_blocking;
+use iced::{
+    futures::{SinkExt, Stream},
+    Task,
+};
 use liana::miniscript::bitcoin::{bip32::Fingerprint, hashes::hex::FromHex, Network};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, warn};
+
+pub use device::AsyncDevice;
 
 #[derive(Debug, Clone)]
 pub enum UnsupportedReason {
@@ -46,7 +53,7 @@ pub enum HardwareWallet {
     },
     Supported {
         id: String,
-        device: Arc<dyn HWI + Sync + Send>,
+        device: AsyncDevice,
         kind: DeviceKind,
         fingerprint: Fingerprint,
         version: Option<Version>,
@@ -56,7 +63,7 @@ pub enum HardwareWallet {
 }
 
 pub enum LockedDevice {
-    BitBox02(Box<PairingBitbox02<runtime::TokioRuntime>>),
+    BitBox02(Box<PairingBitbox02>),
     Jade(Jade<jade::SerialTransport>),
 }
 
@@ -67,17 +74,17 @@ impl std::fmt::Debug for LockedDevice {
 }
 
 impl HardwareWallet {
-    async fn new(
+    fn new(
         id: String,
         device: Arc<dyn HWI + Send + Sync>,
         aliases: Option<&HashMap<Fingerprint, String>>,
     ) -> Result<Self, HWIError> {
         let kind = device.device_kind();
-        let fingerprint = device.get_master_fingerprint().await?;
-        let version = device.get_version().await.ok();
+        let fingerprint = device.get_master_fingerprint()?;
+        let version = device.get_version().ok();
         Ok(Self::Supported {
             id,
-            device,
+            device: AsyncDevice::new(device),
             kind,
             fingerprint,
             version,
@@ -123,7 +130,7 @@ pub struct HardwareWalletConfig {
 }
 
 impl HardwareWalletConfig {
-    pub fn new(kind: &async_hwi::DeviceKind, fingerprint: Fingerprint, token: &[u8; 32]) -> Self {
+    pub fn new(kind: &DeviceKind, fingerprint: Fingerprint, token: &[u8; 32]) -> Self {
         Self {
             kind: kind.to_string(),
             fingerprint,
@@ -142,7 +149,7 @@ impl HardwareWalletConfig {
 pub enum HardwareWalletMessage {
     Error(String),
     List(ConnectedList),
-    Unlocked(String, Result<HardwareWallet, async_hwi::Error>),
+    Unlocked(String, Result<HardwareWallet, HWIError>),
 }
 
 #[derive(Debug, Clone)]
@@ -216,9 +223,9 @@ impl HardwareWallets {
     pub fn update(
         &mut self,
         message: HardwareWalletMessage,
-    ) -> Result<Task<HardwareWalletMessage>, async_hwi::Error> {
+    ) -> Result<Task<HardwareWalletMessage>, HWIError> {
         match message {
-            HardwareWalletMessage::Error(e) => Err(async_hwi::Error::Device(e)),
+            HardwareWalletMessage::Error(e) => Err(HWIError::Device(e)),
             HardwareWalletMessage::List(ConnectedList { still, mut new }) => {
                 // remove disconnected
                 self.list.retain(|hw| still.contains(hw.id()));
@@ -236,14 +243,17 @@ impl HardwareWallets {
                                 None => {}
                                 Some(LockedDevice::BitBox02(bb)) => {
                                     let id = id.to_string();
+                                    let id_cloned = id.clone();
                                     let network = self.network;
                                     let wallet = self.wallet.clone();
                                     cmds.push(Task::perform(
                                         async move {
-                                            (
-                                                id.clone(),
-                                                unlock_bitbox(id, network, bb, wallet).await,
-                                            )
+                                            let res = run_blocking(move || {
+                                                unlock_bitbox(id, network, bb, wallet)
+                                            })
+                                            .await
+                                            .unwrap_or_else(Err);
+                                            (id_cloned, res)
                                         },
                                         |(id, res)| HardwareWalletMessage::Unlocked(id, res),
                                     ));
@@ -255,17 +265,18 @@ impl HardwareWallets {
                                     let wallet = self.wallet.clone();
                                     cmds.push(Task::perform(
                                         async move {
-                                            if let Err(e) = device.auth().await {
-                                                return (id_cloned, Err(e.into()));
-                                            }
-                                            let res = handle_jade_device(
-                                                id,
-                                                network,
-                                                device,
-                                                wallet.as_ref().map(|w| w.as_ref()),
-                                                None,
-                                            )
-                                            .await;
+                                            let res = run_blocking(move || {
+                                                device.auth()?;
+                                                handle_jade_device(
+                                                    id,
+                                                    network,
+                                                    device,
+                                                    wallet.as_ref().map(|w| w.as_ref()),
+                                                    None,
+                                                )
+                                            })
+                                            .await
+                                            .unwrap_or_else(Err);
                                             (id_cloned, res)
                                         },
                                         |(id_cloned, res)| {
@@ -328,27 +339,27 @@ impl HardwareWallets {
     }
 }
 
-async fn unlock_bitbox(
+fn unlock_bitbox(
     id: String,
     network: Network,
-    bb: Box<PairingBitbox02<runtime::TokioRuntime>>,
+    bb: Box<PairingBitbox02>,
     wallet: Option<Arc<Wallet>>,
-) -> Result<HardwareWallet, async_hwi::Error> {
-    let paired_bb = bb.wait_confirm().await?;
+) -> Result<HardwareWallet, HWIError> {
+    let paired_bb = bb.wait_confirm()?;
     let mut bitbox2 = BitBox02::from(paired_bb).with_network(network);
-    let fingerprint = bitbox2.get_master_fingerprint().await?;
+    let fingerprint = bitbox2.get_master_fingerprint()?;
     let mut registered = false;
-    let version = bitbox2.get_version().await.ok();
+    let version = bitbox2.get_version().ok();
     if let Some(wallet) = &wallet {
         let desc = wallet.main_descriptor.to_string();
         bitbox2 = bitbox2.with_policy(&desc)?;
-        registered = bitbox2.is_policy_registered(&desc).await?;
+        registered = bitbox2.is_policy_registered(&desc)?;
         if wallet.descriptor_keys().contains(&fingerprint) {
             Ok(HardwareWallet::Supported {
                 id: id.clone(),
                 kind: DeviceKind::BitBox02,
                 fingerprint,
-                device: bitbox2.into(),
+                device: AsyncDevice::new(Arc::new(bitbox2)),
                 version,
                 registered: Some(registered),
                 alias: None,
@@ -366,7 +377,7 @@ async fn unlock_bitbox(
             id: id.clone(),
             kind: DeviceKind::BitBox02,
             fingerprint,
-            device: bitbox2.into(),
+            device: AsyncDevice::new(Arc::new(bitbox2)),
             version,
             registered: Some(registered),
             alias: None,
@@ -387,343 +398,325 @@ fn refresh(mut state: State) -> impl Stream<Item = HardwareWalletMessage> {
     type Sender = iced::futures::channel::mpsc::Sender<HardwareWalletMessage>;
     iced::stream::channel(100, move |mut output: Sender| async move {
         loop {
-            let api = if let Some(api) = &mut state.api {
-                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                if let Err(e) = api.refresh_devices() {
+            let message = match run_blocking(move || {
+                let message = poll_devices(&mut state);
+                (state, message)
+            })
+            .await
+            {
+                Ok((polled, message)) => {
+                    state = polled;
+                    message
+                }
+                // The polling state is lost with the task, there is nothing left to poll with.
+                Err(e) => {
                     let _ = output
                         .send(HardwareWalletMessage::Error(e.to_string()))
                         .await;
-                    continue;
-                };
-                api
-            } else {
-                match ledger::HidApi::new() {
-                    Ok(api) => {
-                        state.api = Some(api);
-                        state.api.as_mut().unwrap()
-                    }
-                    Err(e) => {
-                        let _ = output
-                            .send(HardwareWalletMessage::Error(e.to_string()))
-                            .await;
-                        continue;
-                    }
+                    return;
                 }
             };
+            let _ = output.send(message).await;
+        }
+    })
+}
 
-            let mut hws: Vec<HardwareWallet> = Vec::new();
-            let mut still: Vec<String> = Vec::new();
-            match specter::SpecterSimulator::try_connect().await {
-                Ok(device) => {
-                    let id = "specter-simulator".to_string();
-                    if state.connected_supported_hws.contains(&id) {
-                        still.push(id);
-                    } else {
-                        match HardwareWallet::new(id, Arc::new(device), Some(&state.keys_aliases))
-                            .await
-                        {
-                            Ok(hw) => hws.push(hw),
-                            Err(e) => {
-                                debug!("{}", e);
-                            }
-                        }
-                    }
-                }
-                Err(HWIError::DeviceNotFound) => {}
-                Err(e) => {
-                    debug!("{}", e);
-                }
-            }
+fn poll_devices(state: &mut State) -> HardwareWalletMessage {
+    let api = match &mut state.api {
+        Some(api) => {
+            std::thread::sleep(std::time::Duration::from_secs(2));
+            if let Err(e) = api.refresh_devices() {
+                return HardwareWalletMessage::Error(e.to_string());
+            };
+            api
+        }
+        None => match ledger::HidApi::new() {
+            Ok(api) => state.api.insert(api),
+            Err(e) => return HardwareWalletMessage::Error(e.to_string()),
+        },
+    };
 
-            match specter::SerialTransport::enumerate_potential_ports() {
-                Ok(ports) => {
-                    for port in ports {
-                        let id = format!("specter-{port}");
-                        if state.connected_supported_hws.contains(&id) {
-                            still.push(id);
-                        } else {
-                            match specter::Specter::<specter::SerialTransport>::new(port.clone()) {
-                                Err(e) => {
-                                    warn!("{}", e);
-                                }
-                                Ok(device) => {
-                                    if tokio::time::timeout(
-                                        std::time::Duration::from_millis(500),
-                                        device.fingerprint(),
-                                    )
-                                    .await
-                                    .is_ok()
-                                    {
-                                        match HardwareWallet::new(
-                                            id,
-                                            Arc::new(device),
-                                            Some(&state.keys_aliases),
-                                        )
-                                        .await
-                                        {
-                                            Ok(hw) => hws.push(hw),
-                                            Err(e) => {
-                                                debug!("{}", e);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                Err(e) => warn!("Error while listing specter wallets: {}", e),
-            }
-
-            match jade::SerialTransport::enumerate_potential_ports() {
-                Ok(ports) => {
-                    for port in ports {
-                        let id = format!("jade-{port}");
-                        if state.connected_supported_hws.contains(&id) {
-                            still.push(id);
-                        } else {
-                            match jade::SerialTransport::new(port) {
-                                Err(e) => {
-                                    warn!("{:?}", e);
-                                }
-                                Ok(device) => {
-                                    match handle_jade_device(
-                                        id,
-                                        state.network,
-                                        Jade::new(device).with_network(state.network),
-                                        state.wallet.as_ref().map(|w| w.as_ref()),
-                                        Some(&state.keys_aliases),
-                                    )
-                                    .await
-                                    {
-                                        Ok(hw) => {
-                                            hws.push(hw);
-                                        }
-                                        Err(e) => {
-                                            warn!("{:?}", e);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                Err(e) => warn!("Error while listing jade devices: {}", e),
-            }
-
-            match ledger::LedgerSimulator::try_connect().await {
-                Ok(device) => {
-                    let id = "ledger-simulator".to_string();
-                    if state.connected_supported_hws.contains(&id) {
-                        still.push(id);
-                    } else {
-                        match handle_ledger_device(
-                            id,
-                            device,
-                            state.wallet.as_ref().map(|w| w.as_ref()),
-                            &state.keys_aliases,
-                        )
-                        .await
-                        {
-                            Ok(hw) => {
-                                hws.push(hw);
-                            }
-                            Err(e) => {
-                                warn!("{:?}", e);
-                            }
-                        }
-                    }
-                }
-                Err(HWIError::DeviceNotFound) => {}
-                Err(e) => {
-                    debug!("{}", e);
-                }
-            }
-
-            for device_info in api.device_list() {
-                if async_hwi::bitbox::is_bitbox02(device_info) {
-                    let id = format!(
-                        "bitbox-{:?}-{}-{}",
-                        device_info.path(),
-                        device_info.vendor_id(),
-                        device_info.product_id()
-                    );
-                    if state.connected_supported_hws.contains(&id) {
-                        still.push(id);
-                        continue;
-                    }
-                    if let Ok(device) = device_info.open_device(api) {
-                        if let Ok(device) = PairingBitbox02::connect(
-                            device,
-                            Some(Box::new(settings::global::PersistedBitboxNoiseConfig::new(
-                                &state.datadir_path,
-                            ))),
-                        )
-                        .await
-                        {
-                            hws.push(HardwareWallet::Locked {
-                                id,
-                                kind: DeviceKind::BitBox02,
-                                pairing_code: device.pairing_code().map(|s| s.replace('\n', " ")),
-                                device: Arc::new(Mutex::new(Some(LockedDevice::BitBox02(
-                                    Box::new(device),
-                                )))),
-                            });
-                        }
-                    }
-                }
-                if device_info.vendor_id() == coldcard::api::COINKITE_VID
-                    && device_info.product_id() == coldcard::api::CKCC_PID
-                {
-                    let id = format!(
-                        "coldcard-{:?}-{}-{}",
-                        device_info.path(),
-                        device_info.vendor_id(),
-                        device_info.product_id()
-                    );
-                    if state.connected_supported_hws.contains(&id) {
-                        still.push(id);
-                        continue;
-                    }
-                    if let Some(sn) = device_info.serial_number() {
-                        if let Ok((cc, _)) =
-                            coldcard::api::Coldcard::open(AsRefWrap { inner: api }, sn, None)
-                        {
-                            let device: Arc<dyn HWI + Send + Sync> =
-                                if let Some(wallet) = &state.wallet {
-                                    coldcard::Coldcard::from(cc)
-                                        .with_wallet_name(wallet.name.clone())
-                                        .into()
-                                } else {
-                                    coldcard::Coldcard::from(cc).into()
-                                };
-                            match (
-                                device.get_master_fingerprint().await,
-                                device.get_version().await,
-                            ) {
-                                (Ok(fingerprint), Ok(version)) => {
-                                    if version
-                                        >= (Version {
-                                            major: 6,
-                                            minor: 2,
-                                            patch: 1,
-                                            prerelease: None,
-                                        })
-                                    {
-                                        hws.push(HardwareWallet::Supported {
-                                            id,
-                                            device,
-                                            kind: DeviceKind::Coldcard,
-                                            fingerprint,
-                                            version: Some(version),
-                                            registered: None,
-                                            alias: state.keys_aliases.get(&fingerprint).cloned(),
-                                        });
-                                    } else {
-                                        hws.push(HardwareWallet::Unsupported {
-                                            id,
-                                            kind: device.device_kind(),
-                                            version: Some(version),
-                                            reason: UnsupportedReason::Version {
-                                                minimal_supported_version: "Edge firmware v6.2.1"
-                                                    .to_string(),
-                                            },
-                                        });
-                                    }
-                                }
-                                _ => tracing::error!("Failed to connect to coldcard"),
-                            }
-                        }
-                    }
-                }
-            }
-            for detected in ledger::Ledger::<ledger::TransportHID>::enumerate(api) {
-                let id = format!(
-                    "ledger-{:?}-{}-{}",
-                    detected.path(),
-                    detected.vendor_id(),
-                    detected.product_id()
-                );
-                if state.connected_supported_hws.contains(&id) {
-                    still.push(id);
-                    continue;
-                }
-
-                match ledger::Ledger::<ledger::TransportHID>::connect(api, detected) {
-                    Ok(device) => match handle_ledger_device(
-                        id,
-                        device,
-                        state.wallet.as_ref().map(|w| w.as_ref()),
-                        &state.keys_aliases,
-                    )
-                    .await
-                    {
-                        Ok(hw) => {
-                            hws.push(hw);
-                        }
-                        Err(e) => {
-                            warn!("{:?}", e);
-                        }
-                    },
-                    Err(HWIError::DeviceNotFound) => {}
+    let mut hws: Vec<HardwareWallet> = Vec::new();
+    let mut still: Vec<String> = Vec::new();
+    match specter::SpecterSimulator::try_connect() {
+        Ok(device) => {
+            let id = "specter-simulator".to_string();
+            if state.connected_supported_hws.contains(&id) {
+                still.push(id);
+            } else {
+                match HardwareWallet::new(id, Arc::new(device), Some(&state.keys_aliases)) {
+                    Ok(hw) => hws.push(hw),
                     Err(e) => {
                         debug!("{}", e);
                     }
                 }
             }
+        }
+        Err(HWIError::DeviceNotFound) => {}
+        Err(e) => {
+            debug!("{}", e);
+        }
+    }
 
-            if let Some(wallet) = &state.wallet {
-                let wallet_keys = wallet.descriptor_keys();
-                for hw in &mut hws {
-                    if let HardwareWallet::Supported {
-                        fingerprint,
-                        id,
-                        kind,
-                        version,
-                        ..
-                    } = &hw
-                    {
-                        if !wallet_keys.contains(fingerprint) {
-                            *hw = HardwareWallet::Unsupported {
-                                id: id.clone(),
-                                kind: *kind,
-                                version: version.clone(),
-                                reason: UnsupportedReason::NotPartOfWallet(*fingerprint),
-                            };
+    match specter::SerialTransport::enumerate_potential_ports() {
+        Ok(ports) => {
+            for port in ports {
+                let id = format!("specter-{port}");
+                if state.connected_supported_hws.contains(&id) {
+                    still.push(id);
+                } else {
+                    match specter::Specter::<specter::SerialTransport>::new(port.clone()) {
+                        Err(e) => {
+                            warn!("{}", e);
+                        }
+                        Ok(device) => {
+                            if device.fingerprint().is_ok() {
+                                match HardwareWallet::new(
+                                    id,
+                                    Arc::new(device),
+                                    Some(&state.keys_aliases),
+                                ) {
+                                    Ok(hw) => hws.push(hw),
+                                    Err(e) => {
+                                        debug!("{}", e);
+                                    }
+                                }
+                            }
                         }
                     }
                 }
             }
-
-            state.connected_supported_hws = still
-                .iter()
-                .chain(hws.iter().filter_map(|hw| match hw {
-                    HardwareWallet::Locked { id, .. } => Some(id),
-                    HardwareWallet::Supported { id, .. } => Some(id),
-                    HardwareWallet::Unsupported { .. } => None,
-                }))
-                .cloned()
-                .collect();
-            let _ = output
-                .send(HardwareWalletMessage::List(ConnectedList {
-                    new: hws,
-                    still,
-                }))
-                .await;
         }
-    })
+        Err(e) => warn!("Error while listing specter wallets: {}", e),
+    }
+
+    match jade::SerialTransport::enumerate_potential_ports() {
+        Ok(ports) => {
+            for port in ports {
+                let id = format!("jade-{port}");
+                if state.connected_supported_hws.contains(&id) {
+                    still.push(id);
+                } else {
+                    match jade::SerialTransport::new(port) {
+                        Err(e) => {
+                            warn!("{:?}", e);
+                        }
+                        Ok(device) => {
+                            match handle_jade_device(
+                                id,
+                                state.network,
+                                Jade::new(device).with_network(state.network),
+                                state.wallet.as_ref().map(|w| w.as_ref()),
+                                Some(&state.keys_aliases),
+                            ) {
+                                Ok(hw) => {
+                                    hws.push(hw);
+                                }
+                                Err(e) => {
+                                    warn!("{:?}", e);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Err(e) => warn!("Error while listing jade devices: {}", e),
+    }
+
+    match ledger::LedgerSimulator::try_connect() {
+        Ok(device) => {
+            let id = "ledger-simulator".to_string();
+            if state.connected_supported_hws.contains(&id) {
+                still.push(id);
+            } else {
+                match handle_ledger_device(
+                    id,
+                    device,
+                    state.wallet.as_ref().map(|w| w.as_ref()),
+                    &state.keys_aliases,
+                ) {
+                    Ok(hw) => {
+                        hws.push(hw);
+                    }
+                    Err(e) => {
+                        warn!("{:?}", e);
+                    }
+                }
+            }
+        }
+        Err(HWIError::DeviceNotFound) => {}
+        Err(e) => {
+            debug!("{}", e);
+        }
+    }
+
+    for device_info in api.device_list() {
+        if bwk_hwi::bitbox::is_bitbox02(device_info) {
+            let id = format!(
+                "bitbox-{:?}-{}-{}",
+                device_info.path(),
+                device_info.vendor_id(),
+                device_info.product_id()
+            );
+            if state.connected_supported_hws.contains(&id) {
+                still.push(id);
+                continue;
+            }
+            if let Ok(device) = device_info.open_device(api) {
+                if let Ok(device) = PairingBitbox02::connect(
+                    device,
+                    Some(Box::new(settings::global::PersistedBitboxNoiseConfig::new(
+                        &state.datadir_path,
+                    ))),
+                ) {
+                    hws.push(HardwareWallet::Locked {
+                        id,
+                        kind: DeviceKind::BitBox02,
+                        pairing_code: device.pairing_code().map(|s| s.replace('\n', " ")),
+                        device: Arc::new(Mutex::new(Some(LockedDevice::BitBox02(Box::new(
+                            device,
+                        ))))),
+                    });
+                }
+            }
+        }
+        if device_info.vendor_id() == coldcard::api::COINKITE_VID
+            && device_info.product_id() == coldcard::api::CKCC_PID
+        {
+            let id = format!(
+                "coldcard-{:?}-{}-{}",
+                device_info.path(),
+                device_info.vendor_id(),
+                device_info.product_id()
+            );
+            if state.connected_supported_hws.contains(&id) {
+                still.push(id);
+                continue;
+            }
+            if let Some(sn) = device_info.serial_number() {
+                if let Ok((cc, _)) =
+                    coldcard::api::Coldcard::open(AsRefWrap { inner: api }, sn, None)
+                {
+                    let device: Arc<dyn HWI + Send + Sync> = if let Some(wallet) = &state.wallet {
+                        coldcard::Coldcard::from(cc)
+                            .with_wallet_name(wallet.name.clone())
+                            .into()
+                    } else {
+                        coldcard::Coldcard::from(cc).into()
+                    };
+                    match (device.get_master_fingerprint(), device.get_version()) {
+                        (Ok(fingerprint), Ok(version)) => {
+                            if version
+                                >= (Version {
+                                    major: 6,
+                                    minor: 2,
+                                    patch: 1,
+                                    prerelease: None,
+                                })
+                            {
+                                hws.push(HardwareWallet::Supported {
+                                    id,
+                                    device: AsyncDevice::new(device),
+                                    kind: DeviceKind::Coldcard,
+                                    fingerprint,
+                                    version: Some(version),
+                                    registered: None,
+                                    alias: state.keys_aliases.get(&fingerprint).cloned(),
+                                });
+                            } else {
+                                hws.push(HardwareWallet::Unsupported {
+                                    id,
+                                    kind: device.device_kind(),
+                                    version: Some(version),
+                                    reason: UnsupportedReason::Version {
+                                        minimal_supported_version: "Edge firmware v6.2.1"
+                                            .to_string(),
+                                    },
+                                });
+                            }
+                        }
+                        _ => tracing::error!("Failed to connect to coldcard"),
+                    }
+                }
+            }
+        }
+    }
+    for detected in ledger::Ledger::<ledger::TransportHID>::enumerate(api) {
+        let id = format!(
+            "ledger-{:?}-{}-{}",
+            detected.path(),
+            detected.vendor_id(),
+            detected.product_id()
+        );
+        if state.connected_supported_hws.contains(&id) {
+            still.push(id);
+            continue;
+        }
+
+        match ledger::Ledger::<ledger::TransportHID>::connect(api, detected) {
+            Ok(device) => match handle_ledger_device(
+                id,
+                device,
+                state.wallet.as_ref().map(|w| w.as_ref()),
+                &state.keys_aliases,
+            ) {
+                Ok(hw) => {
+                    hws.push(hw);
+                }
+                Err(e) => {
+                    warn!("{:?}", e);
+                }
+            },
+            Err(HWIError::DeviceNotFound) => {}
+            Err(e) => {
+                debug!("{}", e);
+            }
+        }
+    }
+
+    if let Some(wallet) = &state.wallet {
+        let wallet_keys = wallet.descriptor_keys();
+        for hw in &mut hws {
+            if let HardwareWallet::Supported {
+                fingerprint,
+                id,
+                kind,
+                version,
+                ..
+            } = &hw
+            {
+                if !wallet_keys.contains(fingerprint) {
+                    *hw = HardwareWallet::Unsupported {
+                        id: id.clone(),
+                        kind: *kind,
+                        version: version.clone(),
+                        reason: UnsupportedReason::NotPartOfWallet(*fingerprint),
+                    };
+                }
+            }
+        }
+    }
+
+    state.connected_supported_hws = still
+        .iter()
+        .chain(hws.iter().filter_map(|hw| match hw {
+            HardwareWallet::Locked { id, .. } => Some(id),
+            HardwareWallet::Supported { id, .. } => Some(id),
+            HardwareWallet::Unsupported { .. } => None,
+        }))
+        .cloned()
+        .collect();
+    HardwareWalletMessage::List(ConnectedList { new: hws, still })
 }
 
-async fn handle_ledger_device<'a, T: async_hwi::ledger::Transport + Sync + Send + 'static>(
+fn handle_ledger_device<'a, T: ledger::Transport + Sync + Send + 'static>(
     id: String,
     mut device: ledger::Ledger<T>,
     wallet: Option<&'a Wallet>,
     keys_aliases: &'a HashMap<Fingerprint, String>,
 ) -> Result<HardwareWallet, HWIError> {
-    match (
-        device.get_master_fingerprint().await,
-        device.get_version().await,
-    ) {
+    match (device.get_master_fingerprint(), device.get_version()) {
         (Ok(fingerprint), Ok(version)) => {
             if ledger_version_supported(&version) {
                 let mut registered = false;
@@ -743,7 +736,7 @@ async fn handle_ledger_device<'a, T: async_hwi::ledger::Transport + Sync + Send 
                     id,
                     kind: device.device_kind(),
                     fingerprint,
-                    device: Arc::new(device),
+                    device: AsyncDevice::new(Arc::new(device)),
                     version: Some(version),
                     registered: Some(registered),
                     alias: keys_aliases.get(&fingerprint).cloned(),
@@ -768,15 +761,15 @@ async fn handle_ledger_device<'a, T: async_hwi::ledger::Transport + Sync + Send 
     }
 }
 
-async fn handle_jade_device(
+fn handle_jade_device(
     id: String,
     network: Network,
-    device: Jade<async_hwi::jade::SerialTransport>,
+    device: Jade<jade::SerialTransport>,
     wallet: Option<&Wallet>,
     keys_aliases: Option<&HashMap<Fingerprint, String>>,
 ) -> Result<HardwareWallet, HWIError> {
-    let info = device.get_info().await?;
-    let version = async_hwi::parse_version(&info.jade_version).ok();
+    let info = device.get_info()?;
+    let version = bwk_hwi::parse_version(&info.jade_version).ok();
     // Jade may not be setup for the current network
     if (network == Network::Bitcoin
         && info.jade_networks != jade::api::JadeNetworks::Main
@@ -802,8 +795,8 @@ async fn handle_jade_device(
             }),
             jade::api::JadeState::Ready => {
                 let kind = device.device_kind();
-                let version = device.get_version().await.ok();
-                let fingerprint = match device.get_master_fingerprint().await {
+                let version = device.get_version().ok();
+                let fingerprint = match device.get_master_fingerprint() {
                     Err(HWIError::NetworkMismatch) => {
                         return Ok(HardwareWallet::Unsupported {
                             id: id.clone(),
@@ -822,12 +815,12 @@ async fn handle_jade_device(
                     if wallet.descriptor_keys().contains(&fingerprint) {
                         let desc = wallet.main_descriptor.to_string();
                         let device = device.with_wallet(wallet.name.clone());
-                        let registered = device.is_wallet_registered(&wallet.name, &desc).await?;
+                        let registered = device.is_wallet_registered(&wallet.name, &desc)?;
                         Ok(HardwareWallet::Supported {
                             id: id.clone(),
                             kind,
                             fingerprint,
-                            device: Arc::new(device),
+                            device: AsyncDevice::new(Arc::new(device)),
                             version,
                             registered: Some(registered),
                             alias,
@@ -845,7 +838,7 @@ async fn handle_jade_device(
                         id: id.clone(),
                         kind,
                         fingerprint,
-                        device: Arc::new(device),
+                        device: AsyncDevice::new(Arc::new(device)),
                         version,
                         registered: Some(false),
                         alias,

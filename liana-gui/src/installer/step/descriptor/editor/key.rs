@@ -4,7 +4,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use async_hwi::{DeviceKind, Version};
+use bwk_hwi::{DeviceKind, Version};
 use iced::{
     alignment::{Horizontal, Vertical},
     clipboard,
@@ -35,7 +35,10 @@ use liana_ui::{
 use crate::{
     app::{settings::ProviderKey, state::export::ExportModal},
     export::{ImportExportMessage, ImportExportType},
-    hw::{is_compatible_with_tapminiscript, HardwareWallet, HardwareWallets, UnsupportedReason},
+    hw::{
+        is_compatible_with_tapminiscript, AsyncDevice, HardwareWallet, HardwareWallets,
+        UnsupportedReason,
+    },
     installer::{
         descriptor::{Key, KeySource},
         message::{self, Message},
@@ -343,7 +346,7 @@ impl SelectKeySource {
         Message::SelectKeySource(msg)
     }
     fn fetch_xpub(
-        hw: std::sync::Arc<dyn async_hwi::HWI + Send + Sync>,
+        hw: AsyncDevice,
         device_version: Option<Version>,
         device_kind: DeviceKind,
         fingerprint: Fingerprint,
@@ -609,7 +612,7 @@ impl SelectKeySource {
                     },
                     Error::HardwareWallet(eh) => match eh {
                         // error returned by ledger on wrong network
-                        async_hwi::Error::Device(d)
+                        bwk_hwi::Error::Device(d)
                             if d == "Device {\n    command: 0,\n    status: NotSupported,\n}" =>
                         {
                             Some(
@@ -1503,7 +1506,7 @@ pub fn derivation_path(network: Network, account: ChildNumber) -> DerivationPath
 /// LIANA_STANDARD_PATH: m/48'/0'/0'/2';
 /// LIANA_TESTNET_STANDARD_PATH: m/48'/1'/0'/2';
 pub async fn get_extended_pubkey(
-    hw: std::sync::Arc<dyn async_hwi::HWI + Send + Sync>,
+    hw: AsyncDevice,
     fingerprint: Fingerprint,
     network: Network,
     account: ChildNumber,

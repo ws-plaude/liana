@@ -2,10 +2,9 @@ use std::{
     collections::{BTreeMap, HashSet},
     fmt::Debug,
     str::FromStr,
-    sync::Arc,
 };
 
-use async_hwi::{bitbox::api::btc::Fingerprint, DeviceKind, Version, HWI};
+use bwk_hwi::{bitbox::api::btc::Fingerprint, DeviceKind, Version};
 use encrypted_backup::{Decrypted, EncryptedBackup};
 use iced::{
     alignment::{self, Horizontal},
@@ -41,7 +40,7 @@ use crate::{
     app::state::export::ExportModal,
     backup::Backup,
     export::ImportExportType,
-    hw::{HardwareWallet, HardwareWallets},
+    hw::{AsyncDevice, HardwareWallet, HardwareWallets},
     installer,
     utils::default_derivation_path,
 };
@@ -314,7 +313,7 @@ impl DecryptModal {
     #[allow(clippy::collapsible_match)]
     fn fetch(
         &self,
-        device: Arc<dyn HWI + Send + Sync>,
+        device: AsyncDevice,
         fingerprint: Fingerprint,
         name: String,
     ) -> Task<installer::Message> {

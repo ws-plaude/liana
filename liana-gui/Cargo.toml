@@ -18,7 +18,7 @@ path = "src/main.rs"
 
 [dependencies]
 async-trait = { workspace = true }
-async-hwi = { workspace = true }
+bwk-hwi = { workspace = true }
 liana = { path = "../liana" }
 liana-connect = { workspace = true }
 lianad = { path = "../lianad", default-features = false, features = ["nonblocking_shutdown"] }

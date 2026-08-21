@@ -28,7 +28,7 @@ use crate::{
     daemon::{Daemon, DaemonBackend},
     dir::LianaDirectory,
     export::{ImportExportMessage, ImportExportType},
-    hw::{HardwareWallet, HardwareWalletConfig, HardwareWallets},
+    hw::{AsyncDevice, HardwareWallet, HardwareWalletConfig, HardwareWallets},
     services::connect::client::backend::WALLET_ALIAS_MAXIMUM_LENGTH,
 };
 
@@ -389,7 +389,7 @@ impl RegisterWalletModal {
                         self.wallet = wallet;
                     }
                     Err(e) => {
-                        if !matches!(e, Error::HardwareWallet(async_hwi::Error::UserRefused)) {
+                        if !matches!(e, Error::HardwareWallet(bwk_hwi::Error::UserRefused)) {
                             self.warning = Some(e)
                         }
                     }
@@ -428,7 +428,7 @@ impl RegisterWalletModal {
 pub async fn register_wallet(
     data_dir: LianaDirectory,
     network: Network,
-    hw: std::sync::Arc<dyn async_hwi::HWI + Send + Sync>,
+    hw: AsyncDevice,
     fingerprint: Fingerprint,
     wallet: Arc<Wallet>,
     daemon: Arc<dyn Daemon + Sync + Send>,

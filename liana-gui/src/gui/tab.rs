@@ -617,7 +617,7 @@ pub fn create_app_with_remote_backend(
         .ledger_hmacs
         .into_iter()
         .map(|ledger_hmac| HardwareWalletConfig {
-            kind: async_hwi::DeviceKind::Ledger.to_string(),
+            kind: bwk_hwi::DeviceKind::Ledger.to_string(),
             fingerprint: ledger_hmac.fingerprint,
             token: ledger_hmac.hmac,
         })

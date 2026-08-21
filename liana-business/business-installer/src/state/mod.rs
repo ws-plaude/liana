@@ -7,7 +7,7 @@ use crate::{
         template_builder_view, wallet_edit::wallet_edit_route, wallet_select_view, xpub_view,
     },
 };
-use async_hwi::{bitbox::NoiseConfig, service::HwiService};
+use bwk_hwi::{bitbox::NoiseConfig, service::HwiService};
 use crossbeam_channel as channel;
 use liana_connect::ws_business::{self, KeyIdentity, Wallet};
 use liana_gui::{app::settings::global::PersistedBitboxNoiseConfig, dir::LianaDirectory};
@@ -99,14 +99,12 @@ impl State {
             tracing::debug!("HW bridge thread stopped (channel disconnected)");
         });
 
-        let rt = tokio::runtime::Handle::current().clone();
-
         // Create shared BitBox noise config for pairing persistence
         let bitbox_config: Arc<dyn NoiseConfig> =
             Arc::new(PersistedBitboxNoiseConfig::new(&datadir));
 
         // Create HwiService and set BitBox noise config for pairing persistence
-        let hw = HwiService::new(network, Some(rt));
+        let hw = HwiService::new(network);
         hw.set_bitbox_noise_config(bitbox_config.clone());
 
         Self {

@@ -4,7 +4,7 @@ use liana_ui::{
 };
 
 use crate::{app::view::message::*, hw::HardwareWallet, view::hw::unusable_device_entry};
-use async_hwi::DeviceKind;
+use bwk_hwi::DeviceKind;
 
 pub fn hw_list_view_verify_address(
     i: usize,

@@ -567,7 +567,7 @@ impl std::fmt::Display for SettingsError {
 /// global settings.
 pub mod global {
     use crate::dir::LianaDirectory;
-    use async_hwi::bitbox::{ConfigError, NoiseConfig, NoiseConfigData};
+    use bwk_hwi::bitbox::{ConfigError, NoiseConfig, NoiseConfigData};
     use fs2::FileExt;
     use serde::{Deserialize, Serialize};
     use std::fs::OpenOptions;
@@ -710,7 +710,7 @@ pub mod global {
         file_path: PathBuf,
     }
 
-    impl async_hwi::bitbox::api::Threading for PersistedBitboxNoiseConfig {}
+    impl bwk_hwi::bitbox::api::Threading for PersistedBitboxNoiseConfig {}
 
     impl PersistedBitboxNoiseConfig {
         /// Creates a new persisting noise config, which stores the pairing information in "bitbox.json"

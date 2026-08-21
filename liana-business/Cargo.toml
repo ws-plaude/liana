@@ -16,7 +16,7 @@ debugger = ["liana-gui/debugger", "business-installer/debugger"]
 
 [dependencies]
 business-installer = { path = "./business-installer", default-features = false }
-async-hwi = { workspace = true }
+bwk-hwi = { workspace = true }
 iced = { workspace = true, default-features = false, features = ["tokio", "image-without-codecs", "wgpu", "tiny-skia", "x11", "wayland"] }
 iced_runtime = { workspace = true }
 liana = { path = "../liana" }

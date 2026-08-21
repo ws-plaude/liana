@@ -20,7 +20,7 @@ use crate::{
         view,
         wallet::Wallet,
     },
-    hw::{HardwareWallet, HardwareWallets},
+    hw::{AsyncDevice, HardwareWallet, HardwareWallets},
 };
 
 use crate::daemon::{
@@ -741,11 +741,8 @@ impl NewAddressModal {
     }
 }
 
-async fn verify_address(
-    hw: std::sync::Arc<dyn async_hwi::HWI + Send + Sync>,
-    index: ChildNumber,
-) -> Result<(), Error> {
-    hw.display_address(&async_hwi::AddressScript::Miniscript {
+async fn verify_address(hw: AsyncDevice, index: ChildNumber) -> Result<(), Error> {
+    hw.display_address(&bwk_hwi::AddressScript::Miniscript {
         change: false,
         index: index.into(),
     })

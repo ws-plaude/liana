@@ -239,8 +239,8 @@ impl BackendClient {
                 serde_json::Value::String("No wallet exists for this uuid".to_string()),
             ))?;
         let ledger_kinds = [
-            async_hwi::DeviceKind::Ledger.to_string(),
-            async_hwi::DeviceKind::LedgerSimulator.to_string(),
+            bwk_hwi::DeviceKind::Ledger.to_string(),
+            bwk_hwi::DeviceKind::LedgerSimulator.to_string(),
         ];
         for cfg in hws {
             if ledger_kinds.contains(&cfg.kind)

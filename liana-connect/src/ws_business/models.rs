@@ -125,7 +125,7 @@ pub struct Xpub {
     pub file_name: Option<String>,
 }
 
-// NOTE: for now only the device brand is detected in async-hwi, so default
+// NOTE: for now only the device brand is detected in bwk-hwi, so default
 // model will be used, other models are reserved for future use.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DeviceKind {
