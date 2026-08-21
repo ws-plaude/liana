@@ -564,7 +564,7 @@ impl<S: SettingsTrait> App<S> {
             }
             Message::View(view::Message::Menu(menu)) => self.set_current_panel(menu),
             Message::View(view::Message::OpenUrl(url)) => {
-                if let Err(e) = open::that_detached(&url) {
+                if let Err(e) = crate::utils::open_url(&url) {
                     tracing::error!("Error opening '{}': {}", url, e);
                 }
                 Task::none()

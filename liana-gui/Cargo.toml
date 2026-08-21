@@ -59,10 +59,6 @@ reqwest = { workspace = true, default-features = false, features = ["json", "rus
 rust-ini = { workspace = true }
 rfd = { workspace = true }
 fs2 = { workspace = true }
-
-# Used for opening URLs in browser
-open = { workspace = true }
-
 encrypted_backup = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]

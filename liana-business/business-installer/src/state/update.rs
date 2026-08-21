@@ -944,7 +944,7 @@ impl State {
             .finish();
         let url = format!("mailto:hello@lianawallet.com?{query}");
 
-        if let Err(error) = open::that_detached(&url) {
+        if let Err(error) = liana_gui::utils::open_url(&url) {
             error!("Error opening '{}': {}", url, error);
             self.on_warning_show_modal(
                 "Couldn't open your email app",
