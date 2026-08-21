@@ -52,7 +52,6 @@ chrono = { workspace = true }
 # Used for managing internal bitcoind
 libc = { workspace = true }
 base64 = { workspace = true }
-bitcoin_hashes = { workspace = true }
 reqwest = { workspace = true, default-features = false, features = ["json", "rustls-tls", "stream"] }
 rust-ini = { workspace = true }
 rfd = { workspace = true }

@@ -1,7 +1,10 @@
 use base64::Engine;
-use bitcoin_hashes::{sha256, Hash, HashEngine, Hmac, HmacEngine};
 use liana::{
-    miniscript::bitcoin::{self, Network},
+    miniscript::bitcoin::{
+        self,
+        hashes::{sha256, Hash, HashEngine, Hmac, HmacEngine},
+        Network,
+    },
     random::{random_bytes, RandomnessError},
 };
 use liana_ui::component::form;
