@@ -81,7 +81,7 @@ base64 = "0.21"
 bitcoin_hashes = "0.12"
 reqwest = { version = "0.11", default-features = false }
 rust-ini = "0.19.0"
-rfd = "0.15.1"
+rfd = { version = "0.15.1", default-features = false, features = ["xdg-portal", "tokio"] }
 fs2 = "0.4.3"
 open = "5.3"
 encrypted_backup = { version = "=0.0.2", package = "bitcoin-encrypted-backup", default-features = false, features = ["miniscript_12_0", "rand"] }
