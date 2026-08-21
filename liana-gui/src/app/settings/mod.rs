@@ -9,10 +9,10 @@ use std::collections::HashMap;
 
 use liana::descriptors::LianaDescriptor;
 use serde::de::DeserializeOwned;
-use std::io::SeekFrom;
-use tokio::fs::OpenOptions;
-use tokio::io::AsyncSeekExt;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use std::{
+    fs::OpenOptions,
+    io::{Read, Seek, SeekFrom, Write},
+};
 
 use liana::miniscript::bitcoin::bip32::Fingerprint;
 use liana_ui::component::form;
@@ -184,7 +184,7 @@ where
     F: FnOnce(S) -> S,
 {
     let path = network_dir.path().join(SETTINGS_FILE_NAME);
-    let file_exists = tokio::fs::try_exists(&path).await.unwrap_or(false);
+    let file_exists = path.try_exists().unwrap_or(false);
 
     let file = OpenOptions::new()
         .read(true)
@@ -192,7 +192,6 @@ where
         .create(true)
         .truncate(false)
         .open(&path)
-        .await
         .map_err(|e| SettingsError::ReadingFile(format!("Opening file: {e}")))?;
     let mut file = crate::utils::lock_write(file)
         .await
@@ -201,7 +200,6 @@ where
     let settings: S = if file_exists {
         let mut file_content = Vec::new();
         file.read_to_end(&mut file_content)
-            .await
             .map_err(|e| SettingsError::ReadingFile(format!("Reading file content: {e}")))?;
 
         serde_json::from_slice::<S>(&file_content)
@@ -213,9 +211,7 @@ where
     let settings = updater(settings);
 
     if settings.wallets().is_empty() {
-        tokio::fs::remove_file(&path)
-            .await
-            .map_err(|e| SettingsError::ReadingFile(e.to_string()))?;
+        std::fs::remove_file(&path).map_err(|e| SettingsError::ReadingFile(e.to_string()))?;
         return Ok(());
     }
 
@@ -223,16 +219,14 @@ where
         .map_err(|e| SettingsError::WritingFile(format!("Failed to serialize settings: {e}")))?;
 
     file.seek(SeekFrom::Start(0))
-        .await
         .map_err(|e| SettingsError::WritingFile(format!("Failed to seek to start of file: {e}")))?;
 
-    file.write_all(&content).await.map_err(|e| {
+    file.write_all(&content).map_err(|e| {
         tracing::warn!("failed to write to file: {:?}", e);
         SettingsError::WritingFile(e.to_string())
     })?;
 
     file.set_len(content.len() as u64)
-        .await
         .map_err(|e| SettingsError::WritingFile(format!("Failed to truncate file: {e}")))?;
 
     Ok(())

@@ -7,6 +7,7 @@ use std::{
 };
 
 use async_trait::async_trait;
+use futures::lock::Mutex;
 use liana::{
     descriptors::LianaDescriptor,
     miniscript::bitcoin::{
@@ -19,7 +20,6 @@ use lianad::{
     commands::{CoinStatus, GetInfoDescriptors, LCSpendInfo, LabelItem, UpdateDerivIndexesResult},
     config::Config,
 };
-use tokio::sync::RwLock;
 
 use crate::{
     daemon::{model::*, Daemon, DaemonBackend, DaemonError, FeerateEstimate},
@@ -51,7 +51,7 @@ impl From<AuthError> for DaemonError {
 
 #[derive(Debug, Clone)]
 pub struct BackendClient {
-    pub auth: Arc<RwLock<auth::AccessTokenResponse>>,
+    pub auth: Arc<Mutex<auth::AccessTokenResponse>>,
     auth_client: auth::AuthClient,
 
     url: String,
@@ -91,7 +91,7 @@ impl BackendClient {
         let res: api::Claims = response.json()?;
 
         Ok(Self {
-            auth: Arc::new(RwLock::new(credentials)),
+            auth: Arc::new(Mutex::new(credentials)),
             auth_client,
             network,
             url,
@@ -134,7 +134,7 @@ impl BackendClient {
 
     /// Builds a request to `uri` on the backend, carrying the current access token.
     async fn authenticated_request(&self, method: Method, uri: &str) -> http::Request {
-        let access_token = &self.auth.read().await.access_token;
+        let access_token = &self.auth.lock().await.access_token;
         self.http
             .request(method, format!("{}{}", self.url, uri))
             .header("Authorization", format!("Bearer {access_token}"))
@@ -505,7 +505,7 @@ impl BackendWalletClient {
     }
 
     pub async fn auth(&self) -> AccessTokenResponse {
-        self.inner.auth.read().await.clone()
+        self.inner.auth.lock().await.clone()
     }
 
     pub async fn delete_wallet(&self) -> Result<(), DaemonError> {
@@ -543,12 +543,12 @@ impl Daemon for BackendWalletClient {
             ));
         }
         if auth.expires_at < now().as_secs() as i64 + 60 {
-            match self.inner.auth.try_write() {
-                Err(_) => {
+            match self.inner.auth.try_lock() {
+                None => {
                     // something is using the lock, we will try next time.
                     return Ok(());
                 }
-                Ok(mut old) => {
+                Some(mut old) => {
                     let network_dir = datadir.network_directory(network);
 
                     let new = update_connect_cache(

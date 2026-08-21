@@ -1,11 +1,8 @@
-use std::{
-    path::PathBuf,
-    sync::{Arc, Mutex},
-};
+use std::{path::PathBuf, sync::Arc};
 
+use futures::{future::AbortHandle, SinkExt};
 use iced::{Subscription, Task};
 use liana_ui::{date, widget::modal::Modal, widget::Element};
-use tokio::task::JoinHandle;
 
 use crate::{
     app::{
@@ -20,7 +17,7 @@ use crate::{
 #[derive(Debug)]
 pub struct ExportModal {
     path: Option<PathBuf>,
-    handle: Option<Arc<Mutex<JoinHandle<()>>>>,
+    handle: Option<AbortHandle>,
     state: ImportExportState,
     error: Option<export::Error>,
     daemon: Option<Arc<dyn Daemon + Sync + Send>>,
@@ -238,7 +235,7 @@ impl ExportModal {
                     ..
                 } = &mut self.import_export_type
                 {
-                    if let Some(sender) = overwrite_labels.take() {
+                    if let Some(mut sender) = overwrite_labels.take() {
                         return Task::perform(
                             async move {
                                 if sender.send(true).await.is_err() {
@@ -249,7 +246,7 @@ impl ExportModal {
                             },
                             |_| ImportExportMessage::Ignore.into(),
                         );
-                    } else if let Some(sender) = overwrite_aliases.take() {
+                    } else if let Some(mut sender) = overwrite_aliases.take() {
                         return Task::perform(
                             async move {
                                 if sender.send(true).await.is_err() {
@@ -270,7 +267,7 @@ impl ExportModal {
                     ..
                 } = &mut self.import_export_type
                 {
-                    if let Some(sender) = overwrite_labels.take() {
+                    if let Some(mut sender) = overwrite_labels.take() {
                         return Task::perform(
                             async move {
                                 if sender.send(false).await.is_err() {
@@ -281,7 +278,7 @@ impl ExportModal {
                             },
                             |_| ImportExportMessage::Ignore.into(),
                         );
-                    } else if let Some(sender) = overwrite_aliases.take() {
+                    } else if let Some(mut sender) = overwrite_aliases.take() {
                         return Task::perform(
                             async move {
                                 if sender.send(false).await.is_err() {
@@ -333,7 +330,7 @@ impl ExportModal {
 
     pub fn stop(&mut self, state: ImportExportState) {
         if let Some(handle) = self.handle.take() {
-            handle.lock().expect("poisoned").abort();
+            handle.abort();
             self.state = state;
         }
     }

@@ -6,6 +6,7 @@ use crate::{
     state::Message,
 };
 use crossbeam_channel as channel;
+use futures::executor::block_on;
 use liana_connect::{
     http,
     ws_business::{self, Org, Request, Response, User, UserRole, Wallet},
@@ -369,8 +370,7 @@ impl Client {
         // Fetch config BEFORE entering async context, the call is blocking.
         let config = get_service_config_blocking(network).ok();
 
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(async {
+        block_on(async {
             for account in cache.accounts {
                 let now = now().as_secs() as i64;
 
@@ -515,8 +515,7 @@ impl Client {
             valid_legacy_emails.len()
         );
 
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(async {
+        block_on(async {
             let _ = filter_connect_cache(&network_dir, &valid_user_ids, &valid_legacy_emails).await;
         });
 
@@ -1633,43 +1632,31 @@ impl Backend for Client {
 
         tracing::debug!("auth_request: starting for email={}", email);
 
-        let rt = tokio::runtime::Handle::current();
-        rt.spawn(async move {
+        // The work is blocking behind an async facade, so it gets a thread rather than a task.
+        thread::spawn(move || {
             tracing::debug!(
                 "auth_request: fetching service config for network={:?}",
                 network
             );
-            let config =
-                match tokio::task::spawn_blocking(move || get_service_config_blocking(network))
-                    .await
-                {
-                    Ok(Ok(cfg)) => {
-                        tracing::debug!(
-                            "auth_request: got config auth_api_url={} backend_api_url={}",
-                            cfg.auth_api_url,
-                            cfg.backend_api_url
-                        );
-                        cfg
-                    }
-                    Ok(Err(e)) => {
-                        tracing::debug!("auth_request: failed to get service config: {:?}", e);
-                        Client::send_notif(
-                            &notif_sender,
-                            &notif_waker,
-                            Notification::AuthCodeFail.into(),
-                        );
-                        return;
-                    }
-                    Err(e) => {
-                        tracing::debug!("auth_request: spawn_blocking failed: {:?}", e);
-                        Client::send_notif(
-                            &notif_sender,
-                            &notif_waker,
-                            Notification::AuthCodeFail.into(),
-                        );
-                        return;
-                    }
-                };
+            let config = match get_service_config_blocking(network) {
+                Ok(cfg) => {
+                    tracing::debug!(
+                        "auth_request: got config auth_api_url={} backend_api_url={}",
+                        cfg.auth_api_url,
+                        cfg.backend_api_url
+                    );
+                    cfg
+                }
+                Err(e) => {
+                    tracing::debug!("auth_request: failed to get service config: {:?}", e);
+                    Client::send_notif(
+                        &notif_sender,
+                        &notif_waker,
+                        Notification::AuthCodeFail.into(),
+                    );
+                    return;
+                }
+            };
 
             // Create auth client
             tracing::debug!(
@@ -1686,7 +1673,7 @@ impl Backend for Client {
 
             // Send OTP (requires async for the HTTP call)
             tracing::debug!("auth_request: sending OTP request");
-            let result = match auth_client.sign_in_otp().await {
+            let result = match block_on(auth_client.sign_in_otp()) {
                 Ok(()) => {
                     tracing::debug!("auth_request: OTP sent successfully");
                     Ok(auth_client)
@@ -1753,8 +1740,7 @@ impl Backend for Client {
         let network_dir = self.network_dir.clone();
         let token_shared = Arc::clone(&self.token);
 
-        let rt = tokio::runtime::Handle::current();
-        rt.spawn(async move {
+        thread::spawn(move || {
             // Get auth client
             let auth_client = {
                 let client_guard = auth_client_shared.lock().expect("poisoned");
@@ -1771,7 +1757,7 @@ impl Backend for Client {
 
             // Verify OTP
             tracing::debug!("auth_code: verifying OTP");
-            let tokens = match auth_client.verify_otp(code.trim()).await {
+            let tokens = match block_on(auth_client.verify_otp(code.trim())) {
                 Ok(tokens) => {
                     tracing::debug!("auth_code: OTP verified successfully");
                     tokens
@@ -1786,7 +1772,13 @@ impl Backend for Client {
             // Update cache if network_dir is available
             let access_token = if let Some(ref network_dir) = network_dir {
                 tracing::debug!("auth_code: updating token cache");
-                match update_connect_cache(network_dir, &tokens, &auth_client, false, None).await {
+                match block_on(update_connect_cache(
+                    network_dir,
+                    &tokens,
+                    &auth_client,
+                    false,
+                    None,
+                )) {
                     Ok(updated_tokens) => updated_tokens.access_token,
                     Err(e) => {
                         // Cache update failed, but we still have tokens

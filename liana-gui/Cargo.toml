@@ -26,11 +26,11 @@ liana-ui = { path = "../liana-ui" }
 backtrace = { workspace = true }
 hex = { workspace = true }
 
-iced = { workspace = true, default-features = false, features = ["tokio", "qr_code", "image-without-codecs", "lazy", "wgpu", "advanced", "tiny-skia", "x11", "wayland"] }
+iced = { workspace = true, default-features = false, features = ["thread-pool", "qr_code", "image-without-codecs", "lazy", "wgpu", "advanced", "tiny-skia", "x11", "wayland"] }
 iced_aw = { workspace = true, features = ["context_menu"] }
 iced_runtime = { workspace = true }
 
-tokio = { workspace = true, features = ["fs", "io-util", "rt", "signal", "sync", "time"] }
+futures = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 
@@ -65,6 +65,3 @@ skip-windows-icon = []
 
 [build-dependencies]
 winresource = { workspace = true }
-
-[dev-dependencies]
-tokio = {workspace = true, features = ["rt", "macros"]}

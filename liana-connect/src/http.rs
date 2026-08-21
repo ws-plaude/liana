@@ -1,10 +1,11 @@
 //! Async wrapper around the blocking `minreq` http client.
 //!
-//! Requests are sent from a `tokio` blocking task so callers stay async. Blocking tasks cannot be
-//! cancelled, so every request carries a timeout to make sure it eventually releases its thread.
+//! Requests are sent from a dedicated thread so callers stay async. That thread cannot be
+//! cancelled, so every request carries a timeout to make sure it eventually releases it.
 
 use std::fmt;
 
+use futures::channel::oneshot;
 use serde::{de::DeserializeOwned, Serialize};
 
 pub use minreq::Method;
@@ -125,9 +126,11 @@ impl Request {
             request = request.with_body(body?);
         }
         tracing::debug!("Sending http request: {request:?}");
-        let response = tokio::task::spawn_blocking(move || request.send())
-            .await
-            .map_err(|e| Error::Request(e.to_string()))??;
+        let (tx, rx) = oneshot::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(request.send());
+        });
+        let response = rx.await.map_err(|e| Error::Request(e.to_string()))??;
         Ok(Response { inner: response })
     }
 }
@@ -175,6 +178,7 @@ impl Response {
 mod tests {
     use super::*;
 
+    use futures::executor::block_on;
     use std::{
         io::{BufRead, BufReader, Read, Write},
         net::TcpListener,
@@ -232,71 +236,77 @@ mod tests {
         (url, rx)
     }
 
-    #[tokio::test]
-    async fn get_sends_headers_and_query_then_deserializes_the_body() {
-        let (url, requests) = serve_once("HTTP/1.1 200 OK", PAYLOAD);
+    #[test]
+    fn get_sends_headers_and_query_then_deserializes_the_body() {
+        block_on(async {
+            let (url, requests) = serve_once("HTTP/1.1 200 OK", PAYLOAD);
 
-        let response = Client::new()
-            .header("User-Agent", "liana-test")
-            .request(Method::Get, format!("{url}/v1/keys"))
-            .query(&[("token", "42-one-two-three")])
-            .send()
-            .await
-            .expect("send")
-            .check_success()
-            .expect("success");
+            let response = Client::new()
+                .header("User-Agent", "liana-test")
+                .request(Method::Get, format!("{url}/v1/keys"))
+                .query(&[("token", "42-one-two-three")])
+                .send()
+                .await
+                .expect("send")
+                .check_success()
+                .expect("success");
 
-        assert_eq!(response.status_code(), 200);
-        assert_eq!(response.text().expect("text"), PAYLOAD);
-        let payload: Payload = response.json().expect("json");
-        assert_eq!(payload.name, "liana");
-        assert_eq!(payload.count, 3);
+            assert_eq!(response.status_code(), 200);
+            assert_eq!(response.text().expect("text"), PAYLOAD);
+            let payload: Payload = response.json().expect("json");
+            assert_eq!(payload.name, "liana");
+            assert_eq!(payload.count, 3);
 
-        let request = requests.recv().expect("request");
-        assert!(request.starts_with("GET /v1/keys?token=42-one-two-three HTTP/1.1\r\n"));
-        assert!(request.contains("User-Agent: liana-test\r\n"));
+            let request = requests.recv().expect("request");
+            assert!(request.starts_with("GET /v1/keys?token=42-one-two-three HTTP/1.1\r\n"));
+            assert!(request.contains("User-Agent: liana-test\r\n"));
+        });
     }
 
-    #[tokio::test]
-    async fn post_sends_the_json_body_under_a_single_content_type() {
-        let (url, requests) = serve_once("HTTP/1.1 200 OK", "{}");
+    #[test]
+    fn post_sends_the_json_body_under_a_single_content_type() {
+        block_on(async {
+            let (url, requests) = serve_once("HTTP/1.1 200 OK", "{}");
 
-        Client::new()
-            .header("Content-Type", "application/json")
-            .request(Method::Post, format!("{url}/v1/keys/redeem"))
-            .json(&Payload {
-                name: "liana".to_string(),
-                count: 3,
-            })
-            .send()
-            .await
-            .expect("send");
+            Client::new()
+                .header("Content-Type", "application/json")
+                .request(Method::Post, format!("{url}/v1/keys/redeem"))
+                .json(&Payload {
+                    name: "liana".to_string(),
+                    count: 3,
+                })
+                .send()
+                .await
+                .expect("send");
 
-        let request = requests.recv().expect("request");
-        assert!(request.starts_with("POST /v1/keys/redeem HTTP/1.1\r\n"));
-        assert_eq!(
-            request
-                .matches("Content-Type: application/json\r\n")
-                .count(),
-            1
-        );
-        assert!(request.contains("Content-Length: 26\r\n"));
-        assert!(request.ends_with(PAYLOAD));
+            let request = requests.recv().expect("request");
+            assert!(request.starts_with("POST /v1/keys/redeem HTTP/1.1\r\n"));
+            assert_eq!(
+                request
+                    .matches("Content-Type: application/json\r\n")
+                    .count(),
+                1
+            );
+            assert!(request.contains("Content-Length: 26\r\n"));
+            assert!(request.ends_with(PAYLOAD));
+        });
     }
 
-    #[tokio::test]
-    async fn not_success_response_carries_the_status_and_the_text() {
-        let (url, _requests) = serve_once("HTTP/1.1 404 Not Found", "wallet not found");
+    #[test]
+    fn not_success_response_carries_the_status_and_the_text() {
+        block_on(async {
+            let (url, _requests) = serve_once("HTTP/1.1 404 Not Found", "wallet not found");
 
-        let response = Client::new()
-            .request(Method::Get, format!("{url}/v1/wallets"))
-            .send()
-            .await
-            .expect("send");
+            let response = Client::new()
+                .request(Method::Get, format!("{url}/v1/wallets"))
+                .send()
+                .await
+                .expect("send");
 
-        assert_eq!(response.status_code(), 404);
-        let info = response.check_success().expect_err("not a success");
-        assert_eq!(info.status_code, 404);
-        assert_eq!(info.text, "wallet not found");
+            assert_eq!(response.status_code(), 404);
+            let info = response.check_success().expect_err("not a success");
+            assert_eq!(info.status_code, 404);
+            assert_eq!(info.text, "wallet not found");
+        });
     }
 }

@@ -594,7 +594,7 @@ pub fn create_app_with_remote_backend(
     // If someone modified the wallet_alias on Liana-Connect,
     // then the new alias is imported and stored in the settings file.
     if wallet.metadata.wallet_alias != wallet_settings.alias {
-        if let Err(e) = tokio::runtime::Handle::current().block_on(async {
+        if let Err(e) = futures::executor::block_on(async {
             update_settings_file(&network_directory, |mut settings: LianaSettings| {
                 if let Some(w) = settings
                     .wallets

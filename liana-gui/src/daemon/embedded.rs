@@ -1,7 +1,7 @@
+use futures::lock::Mutex;
 use lianad::bip329::Labels;
 use lianad::commands::UpdateDerivIndexesResult;
 use std::collections::{HashMap, HashSet};
-use tokio::sync::Mutex;
 
 use super::{model::*, node, Daemon, DaemonBackend, DaemonError};
 use crate::dir::LianaDirectory;

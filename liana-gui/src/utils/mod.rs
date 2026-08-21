@@ -1,10 +1,12 @@
 use std::{
+    future::Future,
     process::{Command, Stdio},
     str::FromStr,
     thread,
     time::{Duration, SystemTime, SystemTimeError, UNIX_EPOCH},
 };
 
+use futures::channel::oneshot::{self, Canceled};
 use liana::miniscript::bitcoin::{bip32::DerivationPath, Network};
 
 pub mod serde;
@@ -60,17 +62,27 @@ pub fn is_valid_email(email: &str) -> bool {
         })
 }
 
-/// Takes an exclusive advisory lock on `file`, off the async runtime as
-/// acquisition blocks while another process holds the lock. The lock is
-/// released when the returned file is dropped.
-pub async fn lock_write(file: tokio::fs::File) -> std::io::Result<tokio::fs::File> {
-    let std_file = file.into_std().await;
-    let std_file = tokio::task::spawn_blocking(move || {
-        fs2::FileExt::lock_exclusive(&std_file).map(|()| std_file)
-    })
-    .await
-    .expect("locking task does not panic")?;
-    Ok(tokio::fs::File::from_std(std_file))
+/// Runs `f` on its own thread so async code can call a blocking API without holding an executor
+/// thread. The future resolves once `f` returns, or errors if the thread died without answering.
+///
+/// A thread cannot be cancelled: dropping the returned future does not stop `f`.
+pub fn spawn_blocking<T: Send + 'static>(
+    f: impl FnOnce() -> T + Send + 'static,
+) -> impl Future<Output = Result<T, Canceled>> {
+    let (tx, rx) = oneshot::channel();
+    thread::spawn(move || {
+        let _ = tx.send(f());
+    });
+    rx
+}
+
+/// Takes an exclusive advisory lock on `file`, off the executor as acquisition
+/// blocks while another process holds the lock. The lock is released when the
+/// returned file is dropped.
+pub async fn lock_write(file: std::fs::File) -> std::io::Result<std::fs::File> {
+    spawn_blocking(move || fs2::FileExt::lock_exclusive(&file).map(|()| file))
+        .await
+        .map_err(|e| std::io::Error::other(format!("locking thread died: {e}")))?
 }
 
 /// Returns the current time as a [`Duration`] since the UNIX epoch.

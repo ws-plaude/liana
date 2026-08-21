@@ -68,7 +68,7 @@ bip329 = { version = "0.3.0", default-features = false }
 async-trait = "0.1"
 bwk-hwi = { git = "https://github.com/ws-plaude/bwk", rev = "f8ee45e2a863faf5fbf5152bc83446742bd47285", default-features = false, features = ["ledger", "specter", "coldcard", "bitbox", "jade", "minreq", "service"] }
 hex = "0.4.3"
-tokio = "1.21.0"
+futures = "0.3"
 tracing = "0.1.37"
 tracing-subscriber = "0.3.16"
 libc = "0.2"

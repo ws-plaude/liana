@@ -7,7 +7,6 @@ use iced::{
 use iced_runtime::window;
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
-use tracing::{error, info};
 use tracing_subscriber::filter::LevelFilter;
 extern crate serde;
 extern crate serde_json;
@@ -39,6 +38,7 @@ use crate::{
         api::{ListCurrenciesResult, PriceApi, PriceApiError},
         Currency, PriceClient, PriceSource,
     },
+    utils::subscription,
 };
 
 use iced::window::Id;
@@ -94,8 +94,8 @@ pub enum Message<M>
 where
     M: Clone + Send + 'static,
 {
-    CtrlC,
     Tick,
+    Interrupted,
     FontLoaded(Result<(), iced::font::Error>),
     Pane(pane_grid::Pane, pane::Message<M>),
     KeyPressed(Key),
@@ -145,14 +145,6 @@ where
     }
 }
 
-async fn ctrl_c() -> Result<(), ()> {
-    if let Err(e) = tokio::signal::ctrl_c().await {
-        error!("{}", e);
-    };
-    info!("Signal received, exiting");
-    Ok(())
-}
-
 impl<I, S, M> GUI<I, S, M>
 where
     I: for<'a> installer::Installer<'a, M>,
@@ -171,10 +163,7 @@ where
         if let Err(e) = setup_logger(log_level, config.liana_directory.clone()) {
             tracing::warn!("Error while setting error: {}", e);
         }
-        let mut cmds = vec![
-            window::oldest().map(Message::Window),
-            Task::perform(ctrl_c(), |_| Message::CtrlC),
-        ];
+        let mut cmds = vec![window::oldest().map(Message::Window)];
         let (pane, cmd) = pane::Pane::<I, S, M>::new(&config);
         let (panes, focused_pane) = pane_grid::State::new(pane);
         cmds.push(cmd.map(move |msg| Message::Pane(focused_pane, msg)));
@@ -280,7 +269,7 @@ where
                     }
                 }
             }
-            Message::CtrlC
+            Message::Interrupted
             | Message::Event(iced::Event::Window(iced::window::Event::CloseRequested)) => {
                 for (_, pane) in self.panes.iter_mut() {
                     pane.stop();
@@ -693,7 +682,8 @@ where
 
     pub fn subscription(&self) -> Subscription<Message<M>> {
         let mut vec = vec![
-            iced::time::every(Duration::from_secs(1)).map(|_| Message::Tick),
+            subscription::every(Duration::from_secs(1)).map(|_| Message::Tick),
+            subscription::interrupt().map(|_| Message::Interrupted),
             iced::event::listen_with(|event, status, _| match (&event, status) {
                 (
                     Event::Keyboard(keyboard::Event::KeyPressed {

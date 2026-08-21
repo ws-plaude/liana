@@ -6,16 +6,16 @@ use liana::miniscript::bitcoin::{
     Psbt,
 };
 
-/// Run a hardware wallet call off the async runtime.
+/// Run a hardware wallet call off the executor.
 ///
 /// The only place where the hop from async to blocking code happens: every device call made from
-/// async code goes through it. A blocking task cannot be cancelled, so dropping the returned
+/// async code goes through it. A blocking thread cannot be cancelled, so dropping the returned
 /// future does not stop the device call, which runs until the device answers or the user acts on
 /// it.
 pub(super) fn run_blocking<T: Send + 'static>(
     f: impl FnOnce() -> T + Send + 'static,
 ) -> impl Future<Output = Result<T, Error>> {
-    let task = tokio::task::spawn_blocking(f);
+    let task = crate::utils::spawn_blocking(f);
     async move {
         task.await
             .map_err(|e| Error::Device(format!("hardware wallet task failed: {e}")))
@@ -89,6 +89,7 @@ impl AsyncDevice {
 mod tests {
     use std::str::FromStr;
 
+    use futures::executor::block_on;
     use liana::miniscript::bitcoin::{
         absolute::LockTime, transaction::Version as TxVersion, Amount, ScriptBuf, Transaction,
         TxOut,
@@ -188,70 +189,76 @@ mod tests {
         .expect("no input to sign")
     }
 
-    #[tokio::test]
-    async fn device_answers_are_returned_unchanged() {
-        let hw = device(None);
-        assert_eq!(hw.device_kind(), DeviceKind::Specter);
-        assert_eq!(
-            hw.get_version().await.expect("no error").to_string(),
-            "1.2.3"
-        );
-        assert_eq!(
-            hw.get_master_fingerprint()
+    #[test]
+    fn device_answers_are_returned_unchanged() {
+        block_on(async {
+            let hw = device(None);
+            assert_eq!(hw.device_kind(), DeviceKind::Specter);
+            assert_eq!(
+                hw.get_version().await.expect("no error").to_string(),
+                "1.2.3"
+            );
+            assert_eq!(
+                hw.get_master_fingerprint()
+                    .await
+                    .expect("no error")
+                    .to_string(),
+                FINGERPRINT
+            );
+            assert_eq!(
+                hw.get_extended_pubkey(&DerivationPath::master())
+                    .await
+                    .expect("no error")
+                    .to_string(),
+                XPUB
+            );
+            assert_eq!(
+                hw.register_wallet("liana", "wsh(pk(A))")
+                    .await
+                    .expect("no error"),
+                Some(HMAC)
+            );
+            assert!(hw
+                .is_wallet_registered("liana", "wsh(pk(A))")
                 .await
-                .expect("no error")
-                .to_string(),
-            FINGERPRINT
-        );
-        assert_eq!(
-            hw.get_extended_pubkey(&DerivationPath::master())
-                .await
-                .expect("no error")
-                .to_string(),
-            XPUB
-        );
-        assert_eq!(
-            hw.register_wallet("liana", "wsh(pk(A))")
-                .await
-                .expect("no error"),
-            Some(HMAC)
-        );
-        assert!(hw
-            .is_wallet_registered("liana", "wsh(pk(A))")
-            .await
-            .expect("no error"));
-        hw.display_address(&address()).await.expect("no error");
+                .expect("no error"));
+            hw.display_address(&address()).await.expect("no error");
+        });
     }
 
-    #[tokio::test]
-    async fn device_error_is_propagated_unchanged() {
-        let hw = device(Some(Error::UserRefused));
-        assert!(matches!(
-            hw.get_version().await.expect_err("device refuses"),
-            Error::UserRefused
-        ));
-        assert!(matches!(
-            hw.display_address(&address())
-                .await
-                .expect_err("device refuses"),
-            Error::UserRefused
-        ));
+    #[test]
+    fn device_error_is_propagated_unchanged() {
+        block_on(async {
+            let hw = device(Some(Error::UserRefused));
+            assert!(matches!(
+                hw.get_version().await.expect_err("device refuses"),
+                Error::UserRefused
+            ));
+            assert!(matches!(
+                hw.display_address(&address())
+                    .await
+                    .expect_err("device refuses"),
+                Error::UserRefused
+            ));
 
-        let mut psbt = unsigned_psbt();
-        assert!(matches!(
-            hw.sign_tx(&mut psbt).await.expect_err("device refuses"),
-            Error::UserRefused
-        ));
-        assert!(psbt.unsigned_tx.output.is_empty());
+            let mut psbt = unsigned_psbt();
+            assert!(matches!(
+                hw.sign_tx(&mut psbt).await.expect_err("device refuses"),
+                Error::UserRefused
+            ));
+            assert!(psbt.unsigned_tx.output.is_empty());
+        });
     }
 
-    #[tokio::test]
-    async fn sign_tx_writes_the_signed_psbt_back() {
-        let hw = device(None);
-        let mut psbt = unsigned_psbt();
-        hw.sign_tx(&mut psbt).await.expect("no error");
-        assert_eq!(psbt.unsigned_tx.output.len(), 1);
-        assert_eq!(psbt.unsigned_tx.output[0].value, SIGNED_MARKER);
-        assert_eq!(psbt.outputs.len(), 1);
+    #[test]
+    fn sign_tx_writes_the_signed_psbt_back() {
+        block_on(async {
+            let hw = device(None);
+            let mut psbt = unsigned_psbt();
+            hw.sign_tx(&mut psbt).await.expect("no error");
+            assert_eq!(psbt.unsigned_tx.output.len(), 1);
+            assert_eq!(psbt.unsigned_tx.output[0].value, SIGNED_MARKER);
+            assert_eq!(psbt.outputs.len(), 1);
+        });
     }
 }

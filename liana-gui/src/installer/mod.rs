@@ -9,6 +9,7 @@ mod view;
 pub use context::{CompileInputs, Context, RemoteBackend};
 
 pub use descriptor::Key;
+use futures::executor::block_on;
 use iced::{clipboard, Subscription, Task};
 use liana::{
     descriptors::{LianaDescriptor, LianaPolicy},
@@ -17,7 +18,6 @@ use liana::{
 use liana_ui::widget::Element;
 use lianad::config::{BitcoinBackend, BitcoindConfig, BitcoindRpcAuth, Config};
 use std::{collections::HashMap, fmt::Debug, ops::Deref};
-use tokio::runtime::Handle;
 use tracing::{error, info, warn};
 
 use std::io::Write;
@@ -357,7 +357,7 @@ impl LianaInstaller {
                 // In case of failure during install, block the thread to
                 // deleted the data_dir/network directory in order to start clean again.
                 warn!("Installation failed. Cleaning up the network directory.");
-                if let Err(e) = Handle::current().block_on(delete::delete_failed_install(
+                if let Err(e) = block_on(delete::delete_failed_install(
                     &network_directory,
                     &wallet_id,
                 )) {
@@ -831,7 +831,7 @@ pub async fn create_remote_wallet(
     let backend = remote_backend.inner_client();
     if let Err(e) = update_connect_cache(
         &network_datadir,
-        backend.auth.read().await.deref(),
+        backend.auth.lock().await.deref(),
         backend.auth_client(),
         false,
         Some(remote_backend.user_id()),
@@ -928,7 +928,7 @@ pub async fn import_remote_wallet(
     let backend = backend.inner_client();
     if let Err(e) = update_connect_cache(
         &network_datadir,
-        backend.auth.read().await.deref(),
+        backend.auth.lock().await.deref(),
         backend.auth_client(),
         false,
         Some(backend.user_id()),

@@ -21,10 +21,8 @@ miniscript = { workspace = true, features = ["serde"]}
 minreq = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-tokio = { workspace = true, features = ["rt"] }
+futures = { workspace = true }
 tracing = { workspace = true }
 tungstenite = { workspace = true }
 uuid = { workspace = true , features = ["serde", "v4"]}
 
-[dev-dependencies]
-tokio = { workspace = true, features = ["macros", "rt"] }

@@ -1,3 +1,4 @@
+use futures::channel::mpsc::UnboundedSender;
 use liana::{
     descriptors::LianaDescriptor,
     miniscript::{
@@ -16,7 +17,6 @@ use std::{
     fmt::{Debug, Display},
     sync::Arc,
 };
-use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{
     app::{
@@ -160,7 +160,7 @@ impl Backup {
 
         let info = daemon.get_info().await?;
 
-        let _ = sender.send(Progress::Progress(20.0));
+        let _ = sender.unbounded_send(Progress::Progress(20.0));
 
         let mut account = Account::new(descriptor);
 
@@ -196,7 +196,7 @@ impl Backup {
             bip329::Labels::new(buff)
         };
 
-        let _ = sender.send(Progress::Progress(30.0));
+        let _ = sender.unbounded_send(Progress::Progress(30.0));
 
         account.labels = Some(labels);
         account.transactions = get_transactions(&daemon)
@@ -205,7 +205,7 @@ impl Backup {
             .map(|tx| miniscript::bitcoin::consensus::encode::serialize_hex(&tx.tx))
             .collect();
 
-        let _ = sender.send(Progress::Progress(40.0));
+        let _ = sender.unbounded_send(Progress::Progress(40.0));
 
         account.psbts = daemon
             .list_spend_transactions(None)
@@ -214,7 +214,7 @@ impl Backup {
             .map(|tx| tx.psbt.to_string())
             .collect();
 
-        let _ = sender.send(Progress::Progress(50.0));
+        let _ = sender.unbounded_send(Progress::Progress(50.0));
 
         let statuses = [
             CoinStatus::Unconfirmed,
@@ -229,7 +229,7 @@ impl Backup {
             .map(|c| (c.outpoint.clone().to_string(), Coin::from(c)))
             .collect();
 
-        let _ = sender.send(Progress::Progress(60.0));
+        let _ = sender.unbounded_send(Progress::Progress(60.0));
 
         Ok(Backup {
             name: Some(name),

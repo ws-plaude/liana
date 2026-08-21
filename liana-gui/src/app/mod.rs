@@ -16,8 +16,8 @@ use std::io::Write;
 use std::sync::Arc;
 use std::time::Duration;
 
+use futures::executor::block_on;
 use iced::{clipboard, Subscription, Task};
-use tokio::runtime::Handle;
 use tracing::{error, info, warn};
 
 pub use liana::miniscript::bitcoin;
@@ -247,7 +247,7 @@ impl<S: SettingsTrait> App<S> {
 
         match &menu {
             menu::Menu::TransactionPreSelected(txid) => {
-                if let Ok(Some(tx)) = Handle::current().block_on(async {
+                if let Ok(Some(tx)) = block_on(async {
                     self.daemon
                         .get_history_txs(&[*txid])
                         .await
@@ -262,7 +262,7 @@ impl<S: SettingsTrait> App<S> {
                 // Get preselected spend from DB in case it's not yet in the cache.
                 // We only need this single spend as we will go straight to its view and not show the PSBTs list.
                 // In case of any error loading the spend or if it doesn't exist, load PSBTs list in usual way.
-                if let Ok(Some(spend_tx)) = Handle::current().block_on(async {
+                if let Ok(Some(spend_tx)) = block_on(async {
                     self.daemon
                         .list_spend_transactions(Some(&[*txid]))
                         .await
@@ -324,7 +324,7 @@ impl<S: SettingsTrait> App<S> {
     pub fn stop(&mut self) {
         info!("Close requested");
         if self.daemon.backend().is_embedded() {
-            if let Err(e) = Handle::current().block_on(async { self.daemon.stop().await }) {
+            if let Err(e) = block_on(async { self.daemon.stop().await }) {
                 error!("{}", e);
             } else {
                 info!("Internal daemon stopped");
@@ -582,7 +582,7 @@ impl<S: SettingsTrait> App<S> {
         datadir_path: LianaDirectory,
         cfg: DaemonConfig,
     ) -> Result<(), Error> {
-        Handle::current().block_on(async { self.daemon.stop().await })?;
+        block_on(async { self.daemon.stop().await })?;
         let network = cfg.bitcoin_config.network;
         let daemon = EmbeddedDaemon::start(cfg)?;
         self.daemon = Arc::new(daemon);

@@ -430,7 +430,7 @@ impl DefineSpend {
 
         let feerate_vb = self.feerate.value.parse::<u64>().expect("Checked before");
         let recovery_timelock = self.recovery_timelock;
-        match tokio::runtime::Handle::current().block_on(async {
+        match futures::executor::block_on(async {
             // If recovery timelock is set, create a recovery transaction. Otherwise, a regular spend.
             if let Some(reco_tl) = recovery_timelock {
                 daemon

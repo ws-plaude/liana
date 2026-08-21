@@ -1,19 +1,18 @@
 // This is based on https://github.com/iced-rs/iced/blob/master/examples/download_progress/src/download.rs
 // with some modifications to store the downloaded bytes in `Progress::Finished` and `State::Downloading`
 // and to keep track of any download errors.
-use iced::futures::{SinkExt, Stream, StreamExt};
+use futures::{
+    channel::{mpsc, oneshot},
+    SinkExt, Stream, StreamExt,
+};
 use iced::stream::try_channel;
 
 use std::{hash::Hash, io::Read};
-
-use tokio::sync::mpsc;
 
 /// The downloaded archive weighs tens of megabytes, leave room for a slow link.
 const TIMEOUT_SECS: u64 = 30 * 60;
 
 const CHUNK_SIZE: usize = 64 * 1024;
-
-const PROGRESS_BUFFER: usize = 100;
 
 // Just a little utility function
 pub fn file<I: 'static + Hash + Copy + Send + Sync, T: ToString>(
@@ -27,26 +26,26 @@ pub fn file<I: 'static + Hash + Copy + Send + Sync, T: ToString>(
 }
 
 fn download(url: String) -> impl Stream<Item = Result<Progress, DownloadError>> {
-    try_channel(
-        100,
-        move |mut output: iced::futures::channel::mpsc::Sender<Progress>| async move {
-            let (tx, mut rx) = mpsc::channel(PROGRESS_BUFFER);
-            let downloader = tokio::task::spawn_blocking(move || download_blocking(&url, &tx));
+    try_channel(100, move |mut output: mpsc::Sender<Progress>| async move {
+        let (tx, mut rx) = mpsc::unbounded();
+        let (done, downloader) = oneshot::channel();
+        std::thread::spawn(move || {
+            let _ = done.send(download_blocking(&url, &tx));
+        });
 
-            // Dropping this future drops `rx`, which is what tells the blocking task to stop.
-            while let Some(progress) = rx.recv().await {
-                let _ = output.send(progress).await;
-            }
+        // Dropping this future drops `rx`, which is what tells the blocking thread to stop.
+        while let Some(progress) = rx.next().await {
+            let _ = output.send(progress).await;
+        }
 
-            downloader
-                .await
-                .map_err(|e| DownloadError::RequestFailed(e.to_string()))?
-        },
-    )
+        downloader
+            .await
+            .map_err(|e| DownloadError::RequestFailed(e.to_string()))?
+    })
 }
 
 /// Downloads `url`, reporting progress over `tx`. Returns as soon as the receiver is gone.
-fn download_blocking(url: &str, tx: &mpsc::Sender<Progress>) -> Result<(), DownloadError> {
+fn download_blocking(url: &str, tx: &mpsc::UnboundedSender<Progress>) -> Result<(), DownloadError> {
     let mut response = minreq::get(url).with_timeout(TIMEOUT_SECS).send_lazy()?;
     let total = response
         .headers
@@ -54,7 +53,7 @@ fn download_blocking(url: &str, tx: &mpsc::Sender<Progress>) -> Result<(), Downl
         .find(|(key, _)| key.eq_ignore_ascii_case("content-length"))
         .and_then(|(_, value)| value.parse::<usize>().ok());
 
-    if tx.blocking_send(Progress::Downloading(0.0)).is_err() {
+    if tx.unbounded_send(Progress::Downloading(0.0)).is_err() {
         return Ok(());
     }
 
@@ -73,13 +72,16 @@ fn download_blocking(url: &str, tx: &mpsc::Sender<Progress>) -> Result<(), Downl
         bytes.extend_from_slice(&chunk[..read]);
         if let Some(total) = total {
             let percentage = 100.0 * bytes.len() as f32 / total as f32;
-            if tx.blocking_send(Progress::Downloading(percentage)).is_err() {
+            if tx
+                .unbounded_send(Progress::Downloading(percentage))
+                .is_err()
+            {
                 return Ok(());
             }
         }
     }
 
-    let _ = tx.blocking_send(Progress::Finished(bytes));
+    let _ = tx.unbounded_send(Progress::Finished(bytes));
 
     Ok(())
 }
@@ -125,6 +127,7 @@ impl From<std::io::Error> for DownloadError {
 mod tests {
     use super::*;
 
+    use futures::executor::block_on;
     use std::{
         io::{BufRead, BufReader, Write},
         net::TcpListener,
@@ -179,10 +182,10 @@ mod tests {
     #[test]
     fn dropped_receiver_stops_the_download() {
         let (url, written) = serve_endless_body();
-        let (tx, mut rx) = mpsc::channel(1);
+        let (tx, mut rx) = mpsc::unbounded();
         let downloader = std::thread::spawn(move || download_blocking(&url, &tx));
 
-        let first = rx.blocking_recv().expect("first progress");
+        let first = block_on(rx.next()).expect("first progress");
         assert!(matches!(first, Progress::Downloading(p) if p == 0.0));
         drop(rx);
 
@@ -197,11 +200,11 @@ mod tests {
     #[test]
     fn dropped_receiver_stops_a_download_without_content_length() {
         let (url, written) = serve_body(false);
-        let (tx, mut rx) = mpsc::channel(1);
+        let (tx, mut rx) = mpsc::unbounded();
         let downloader = std::thread::spawn(move || download_blocking(&url, &tx));
 
         // No content length means no progress is ever sent, so only the closed channel can stop it.
-        rx.blocking_recv().expect("first progress");
+        block_on(rx.next()).expect("first progress");
         drop(rx);
 
         let res = downloader.join().expect("downloader thread");
