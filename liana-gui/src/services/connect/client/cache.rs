@@ -1,5 +1,4 @@
 use crate::dir::NetworkDirectory;
-use async_fd_lock::LockWrite;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::io::SeekFrom;
@@ -109,8 +108,9 @@ impl Account {
     }
 }
 
-/// Guard returned by [`open_locked_cache`]; holds the exclusive file lock.
-type LockedCache = async_fd_lock::RwLockWriteGuard<tokio::fs::File>;
+/// File returned by [`open_locked_cache`]; holds the exclusive advisory lock
+/// until dropped.
+type LockedCache = tokio::fs::File;
 
 /// Open the connect cache under an exclusive write lock and return the parsed
 /// contents alongside the still-locked handle. Returns `None` when the file is
@@ -135,15 +135,15 @@ async fn open_locked_cache(
         }
     }
 
-    let mut file = OpenOptions::new()
+    let file = OpenOptions::new()
         .read(true)
         .write(true)
         .create(create_if_missing)
         .truncate(false)
         .open(&path)
         .await
-        .map_err(|e| ConnectCacheError::ReadingFile(format!("Opening file: {e}")))?
-        .lock_write()
+        .map_err(|e| ConnectCacheError::ReadingFile(format!("Opening file: {e}")))?;
+    let mut file = crate::utils::lock_write(file)
         .await
         .map_err(|e| ConnectCacheError::ReadingFile(format!("Locking file: {e:?}")))?;
 
@@ -186,8 +186,7 @@ async fn write_cache_back(
         ConnectCacheError::WritingFile(e.to_string())
     })?;
 
-    file.inner_mut()
-        .set_len(content.len() as u64)
+    file.set_len(content.len() as u64)
         .await
         .map_err(|e| ConnectCacheError::WritingFile(format!("Failed to truncate file: {e}")))?;
 

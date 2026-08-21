@@ -34,7 +34,6 @@ iced_runtime = { workspace = true }
 email_address = { workspace = true }
 
 tokio = { workspace = true, features = ["signal"] }
-async-fd-lock = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 

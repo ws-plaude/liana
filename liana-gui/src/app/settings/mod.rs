@@ -7,7 +7,6 @@ pub use ui::SettingsUI;
 
 use std::collections::HashMap;
 
-use async_fd_lock::LockWrite;
 use liana::descriptors::LianaDescriptor;
 use serde::de::DeserializeOwned;
 use std::io::SeekFrom;
@@ -187,15 +186,15 @@ where
     let path = network_dir.path().join(SETTINGS_FILE_NAME);
     let file_exists = tokio::fs::try_exists(&path).await.unwrap_or(false);
 
-    let mut file = OpenOptions::new()
+    let file = OpenOptions::new()
         .read(true)
         .write(true)
         .create(true)
         .truncate(false)
         .open(&path)
         .await
-        .map_err(|e| SettingsError::ReadingFile(format!("Opening file: {e}")))?
-        .lock_write()
+        .map_err(|e| SettingsError::ReadingFile(format!("Opening file: {e}")))?;
+    let mut file = crate::utils::lock_write(file)
         .await
         .map_err(|e| SettingsError::ReadingFile(format!("Locking file: {e:?}")))?;
 
@@ -232,8 +231,7 @@ where
         SettingsError::WritingFile(e.to_string())
     })?;
 
-    file.inner_mut()
-        .set_len(content.len() as u64)
+    file.set_len(content.len() as u64)
         .await
         .map_err(|e| SettingsError::WritingFile(format!("Failed to truncate file: {e}")))?;
 

@@ -41,6 +41,19 @@ pub fn open_url(url: &str) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Takes an exclusive advisory lock on `file`, off the async runtime as
+/// acquisition blocks while another process holds the lock. The lock is
+/// released when the returned file is dropped.
+pub async fn lock_write(file: tokio::fs::File) -> std::io::Result<tokio::fs::File> {
+    let std_file = file.into_std().await;
+    let std_file = tokio::task::spawn_blocking(move || {
+        fs2::FileExt::lock_exclusive(&std_file).map(|()| std_file)
+    })
+    .await
+    .expect("locking task does not panic")?;
+    Ok(tokio::fs::File::from_std(std_file))
+}
+
 /// Returns the current time as a [`Duration`] since the UNIX epoch.
 pub fn now() -> Duration {
     now_fallible().expect("cannot fail")
