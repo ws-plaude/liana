@@ -14,7 +14,7 @@ debugger = ["liana-gui/debugger"]
 [dependencies]
 crossbeam-channel = "0.5"
 minreq = { workspace = true }
-iced = { workspace = true, default-features = false, features = ["thread-pool", "image-without-codecs", "wgpu", "tiny-skia", "x11", "wayland"] }
+iced = { workspace = true, default-features = false, features = ["thread-pool", "image-without-codecs", "tiny-skia", "x11", "wayland"] }
 liana = { workspace = true }
 liana-connect = { workspace = true }
 liana-gui = { workspace = true, features = ["skip-windows-icon"] }

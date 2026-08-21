@@ -15,9 +15,7 @@ ignore = [
     "RUSTSEC-2026-0194",
     "RUSTSEC-2026-0195",
 
-    # Unmaintained, no replacement available, both pulled in transitively:
-    # paste by several proc macro users, ttf-parser by the text stack.
-    "RUSTSEC-2024-0436",
+    # Unmaintained, no replacement available, pulled in transitively by the text stack.
     "RUSTSEC-2026-0192",
 ]
 
