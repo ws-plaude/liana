@@ -42,7 +42,6 @@ fern = { workspace = true }
 # In order to have a backtrace on panic, because the
 # stdlib does not have a programmatic interface yet
 # to work with our custom panic hook.
-backtrace = { workspace = true }
 
 rusqlite = { workspace = true, features = ["bundled", "unlock_notify"] }
 

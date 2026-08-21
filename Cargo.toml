@@ -58,7 +58,6 @@ thiserror = "2.0.17"
 rustls = { version = "0.23.35", default-features = false, features = ["ring", "std", "logging", "tls12"] }
 
 # Other dependencies
-backtrace = "0.3"
 bdk_coin_select = "0.4"
 getrandom = "0.3.1"
 bip39 = "2.0"

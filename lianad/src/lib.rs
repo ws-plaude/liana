@@ -51,7 +51,7 @@ pub fn setup_panic_hook() {
             .map(|l| l.line().to_string())
             .unwrap_or_else(|| "'unknown'".to_string());
 
-        let bt = backtrace::Backtrace::new();
+        let bt = std::backtrace::Backtrace::force_capture();
         let info = panic_info
             .payload()
             .downcast_ref::<&str>()

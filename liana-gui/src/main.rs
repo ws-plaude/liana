@@ -73,7 +73,12 @@ fn main() -> Result<(), Box<dyn Error>> {
 // A panic in any thread should stop the main thread, and print the panic.
 fn setup_panic_hook(liana_directory: &LianaDirectory) {
     let bitcoind_dir = liana_directory.bitcoind_directory();
+    // Chained rather than replaced: the default hook is what prints the panic
+    // to stderr, and the logger below only exists once the GUI has started.
+    let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |panic_info| {
+        default_hook(panic_info);
+
         error!("Panic occurred");
         if let Err(e) = delete_all_bitcoind_locks_for_process(bitcoind_dir.clone()) {
             error!("Failed to delete internal bitcoind locks: {}", e);
@@ -87,7 +92,7 @@ fn setup_panic_hook(liana_directory: &LianaDirectory) {
             .map(|l| l.line().to_string())
             .unwrap_or_else(|| "'unknown'".to_string());
 
-        let bt = backtrace::Backtrace::new();
+        let bt = std::backtrace::Backtrace::force_capture();
         let info = panic_info
             .payload()
             .downcast_ref::<&str>()
