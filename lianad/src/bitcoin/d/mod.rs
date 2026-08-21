@@ -23,8 +23,7 @@ use std::{
 use jsonrpc::{
     arg,
     client::Client,
-    minreq,
-    minreq_http::{self, MinreqHttpTransport},
+    simple_http::{self, SimpleHttpTransport},
 };
 
 use miniscript::{
@@ -79,41 +78,42 @@ impl BitcoindError {
 
     /// Is it a timeout of any kind?
     pub fn is_timeout(&self) -> bool {
-        if let BitcoindError::Server(jsonrpc::Error::Transport(ref e)) = self {
-            if let Some(minreq_http::Error::Minreq(minreq::Error::IoError(e))) =
-                e.downcast_ref::<minreq_http::Error>()
-            {
-                return e.kind() == io::ErrorKind::TimedOut;
+        match self.transport_error() {
+            // An expired socket timeout surfaces as WouldBlock on unix.
+            Some(simple_http::Error::SocketError(e)) => {
+                matches!(
+                    e.kind(),
+                    io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock
+                )
             }
+            _ => false,
         }
-        false
     }
 
     /// Is it an error that can be recovered from?
     pub fn is_transient(&self) -> bool {
-        if let BitcoindError::Server(jsonrpc::Error::Transport(ref e)) = self {
-            if let Some(ref e) = e.downcast_ref::<minreq_http::Error>() {
-                // Bitcoind is overloaded
-                if let minreq_http::Error::Http(minreq_http::HttpError { status_code, .. }) = e {
-                    return status_code == &503;
-                }
-                // Bitcoind may have been restarted
-                return matches!(e, minreq_http::Error::Minreq(minreq::Error::IoError(_)));
-            }
+        match self.transport_error() {
+            // Bitcoind is overloaded
+            Some(simple_http::Error::HttpErrorCode(status)) => *status == 503,
+            // Bitcoind may have been restarted
+            Some(simple_http::Error::SocketError(_)) => true,
+            _ => false,
         }
-        false
     }
 
     /// Is it an error that has to do with our credentials?
     pub fn is_unauthorized(&self) -> bool {
-        if let BitcoindError::Server(jsonrpc::Error::Transport(ref e)) = self {
-            if let Some(minreq_http::Error::Http(minreq_http::HttpError { status_code, .. })) =
-                e.downcast_ref::<minreq_http::Error>()
-            {
-                return status_code == &401;
-            }
+        match self.transport_error() {
+            Some(simple_http::Error::HttpErrorCode(status)) => *status == 401,
+            _ => false,
         }
-        false
+    }
+
+    fn transport_error(&self) -> Option<&simple_http::Error> {
+        match self {
+            BitcoindError::Server(jsonrpc::Error::Transport(e)) => e.downcast_ref(),
+            _ => None,
+        }
     }
 }
 
@@ -165,8 +165,8 @@ impl From<jsonrpc::error::Error> for BitcoindError {
     }
 }
 
-impl From<minreq_http::Error> for BitcoindError {
-    fn from(e: minreq_http::Error) -> Self {
+impl From<simple_http::Error> for BitcoindError {
+    fn from(e: simple_http::Error) -> Self {
         jsonrpc::error::Error::Transport(Box::new(e)).into()
     }
 }
@@ -243,10 +243,10 @@ impl BitcoinD {
             config::BitcoindRpcAuth::CookieFile(cookie_path) => {
                 let cookie_string =
                     fs::read_to_string(cookie_path).map_err(BitcoindError::CookieFile)?;
-                MinreqHttpTransport::builder().cookie_auth(cookie_string)
+                SimpleHttpTransport::builder().cookie_auth(cookie_string)
             }
             config::BitcoindRpcAuth::UserPass(user, pass) => {
-                MinreqHttpTransport::builder().basic_auth(user.clone(), Some(pass.clone()))
+                SimpleHttpTransport::builder().auth(user.clone(), Some(pass.clone()))
             }
         };
 
