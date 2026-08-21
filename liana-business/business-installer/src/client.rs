@@ -892,9 +892,6 @@ fn wss_thread(
 
     tracing::debug!("wss_thread: connecting to {}", url);
 
-    // Install ring crypto provider for rustls (required by tungstenite TLS)
-    let _ = rustls::crypto::ring::default_provider().install_default();
-
     let (mut ws_stream, _) = match tungstenite::connect(&url) {
         Ok(stream) => {
             tracing::debug!("wss_thread: WebSocket connection established");
@@ -932,7 +929,7 @@ fn wss_thread(
         tungstenite::stream::MaybeTlsStream::Plain(s) => {
             let _ = s.set_read_timeout(Some(Duration::from_secs(30)));
         }
-        tungstenite::stream::MaybeTlsStream::Rustls(s) => {
+        tungstenite::stream::MaybeTlsStream::NativeTls(s) => {
             let _ = s.get_ref().set_read_timeout(Some(Duration::from_secs(30)));
         }
         _ => {}
@@ -1001,7 +998,7 @@ fn wss_thread(
             stream.set_read_timeout(None).expect("must not fail");
             stream.set_nonblocking(true).expect("must not fail");
         }
-        tungstenite::stream::MaybeTlsStream::Rustls(stream) => {
+        tungstenite::stream::MaybeTlsStream::NativeTls(stream) => {
             stream
                 .get_ref()
                 .set_read_timeout(None)
@@ -1011,7 +1008,7 @@ fn wss_thread(
                 .set_nonblocking(true)
                 .expect("must not fail");
         }
-        _ => unreachable!("NativeTls not enabled"),
+        _ => unreachable!("Rustls not enabled"),
     }
 
     // Cache for sent requests to validate response types: (Request, sent_time, retry_count)

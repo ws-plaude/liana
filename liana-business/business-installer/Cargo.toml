@@ -24,8 +24,7 @@ serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 uuid = { workspace = true, features = ["v4"] }
-tungstenite = { workspace = true, features = ["rustls-tls-webpki-roots"] }
-rustls = { workspace = true, features = ["ring"] }
+tungstenite = { workspace = true, features = ["native-tls"] }
 bwk-hwi = { workspace = true, features = ["service", "ledger", "jade", "coldcard", "bitbox", "specter"] }
 tracing = { workspace = true }
 futures = { workspace = true }

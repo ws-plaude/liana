@@ -67,7 +67,6 @@ pub fn setup_logger(
                         && !metadata.target().starts_with("polling")
                         && !metadata.target().starts_with("calloop")
                         && !metadata.target().starts_with("async_io")
-                        && !metadata.target().starts_with("rustls")
                         && !metadata.target().starts_with("hyper")
                         && !metadata.target().starts_with("minreq")
                         && !metadata.target().starts_with("tungstenite")
