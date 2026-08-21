@@ -1,4 +1,3 @@
-use chrono::{Duration, Utc};
 use liana::{
     descriptors::LianaDescriptor,
     miniscript::{
@@ -283,7 +282,7 @@ async fn get_transactions(
 
     // look 2 hour forward
     // https://github.com/bitcoin/bitcoin/blob/62bd61de110b057cbfd6e31e4d0b727d93119c72/src/chain.h#L29
-    let mut end = ((Utc::now() + Duration::hours(2)).timestamp()) as u32;
+    let mut end = (now().as_secs() + 2 * 3600) as u32;
 
     // store txs in a map to avoid duplicates
     let mut map = HashMap::<Txid, HistoryTransaction>::new();

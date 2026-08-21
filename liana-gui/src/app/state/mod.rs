@@ -374,7 +374,7 @@ impl State for Home {
                     self.processing = true;
                     return Task::perform(
                         async move {
-                            let last_event_date = last_event_date.timestamp() as u32;
+                            let last_event_date = last_event_date as u32;
                             let mut limit = HISTORY_EVENT_PAGE_SIZE;
                             let mut events = daemon
                                 .list_confirmed_payments(0_u32, last_event_date, limit)

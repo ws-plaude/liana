@@ -13,7 +13,6 @@ use encrypted_backup::{descriptor::dpk_to_pk, Decrypted, EncryptedBackup};
 use tokio::sync::mpsc::{channel, unbounded_channel, Sender, UnboundedReceiver, UnboundedSender};
 
 use async_hwi::bitbox::api::btc::Fingerprint;
-use chrono::{DateTime, Duration, Utc};
 use liana::{
     descriptors::{bip341_nums, LianaDescriptor},
     miniscript::{
@@ -48,6 +47,7 @@ use crate::{
     dir::{LianaDirectory, NetworkDirectory},
     node::bitcoind::Bitcoind,
     services::connect::client::backend::DEFAULT_LIMIT,
+    utils::now,
 };
 
 const DUMP_LABELS_LIMIT: u32 = 100;
@@ -448,7 +448,7 @@ pub async fn export_transactions(
 
     // look 2 hour forward
     // https://github.com/bitcoin/bitcoin/blob/62bd61de110b057cbfd6e31e4d0b727d93119c72/src/chain.h#L29
-    let mut end = ((Utc::now() + Duration::hours(2)).timestamp()) as u32;
+    let mut end = (now().as_secs() + 2 * 3600) as u32;
     let total_txs = daemon
         .list_confirmed_txs(0, end, u32::MAX as u64)
         .await?
@@ -525,16 +525,7 @@ pub async fn export_transactions(
     for mut tx in txs {
         let date_time = tx
             .time
-            .map(|t| {
-                let mut str = DateTime::from_timestamp(t as i64, 0)
-                    .expect("bitcoin timestamp")
-                    .to_rfc3339();
-                //str has the form `1996-12-19T16:39:57-08:00`
-                //                            ^        ^^^^^^
-                //          replace `T` by ` `|           | drop this part
-                str = str.replace("T", " ");
-                str[0..(str.len() - 6)].to_string()
-            })
+            .map(|t| liana_ui::date::format_export_date_time(t as i64))
             .unwrap_or("".to_string());
 
         let txid = tx.txid.clone().to_string();

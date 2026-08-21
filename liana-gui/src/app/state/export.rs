@@ -4,7 +4,7 @@ use std::{
 };
 
 use iced::{Subscription, Task};
-use liana_ui::{widget::modal::Modal, widget::Element};
+use liana_ui::{date, widget::modal::Modal, widget::Element};
 use tokio::task::JoinHandle;
 
 use crate::{
@@ -88,7 +88,7 @@ impl ExportModal {
     }
 
     pub fn default_filename(&self) -> String {
-        let date = chrono::Local::now().format("%Y-%m-%dT%H-%M-%S");
+        let date = date::format_filename_date_time(crate::utils::now().as_secs() as i64);
         match &self.import_export_type {
             ImportExportType::Transactions => {
                 format!("liana-txs-{date}.csv")

@@ -577,7 +577,7 @@ pub async fn connect_with_credentials(
 
     let mut tokens = cached.tokens;
 
-    if tokens.expires_at < chrono::Utc::now().timestamp() {
+    if tokens.expires_at < crate::utils::now().as_secs() as i64 {
         tokens = cache::update_connect_cache(
             network_dir,
             &tokens,

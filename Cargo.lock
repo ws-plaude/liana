@@ -576,7 +576,6 @@ name = "business-installer"
 version = "1.0.0"
 dependencies = [
  "async-hwi",
- "chrono",
  "crossbeam",
  "futures",
  "hex",
@@ -2797,7 +2796,6 @@ dependencies = [
  "backtrace",
  "base64 0.21.7",
  "bitcoin-encrypted-backup",
- "chrono",
  "flate2",
  "fs2",
  "hex",
@@ -2829,13 +2827,14 @@ name = "liana-ui"
 version = "15.0.0"
 dependencies = [
  "bitcoin",
- "chrono",
  "iced",
  "iced_aw",
  "iced_core",
  "iced_runtime",
  "image",
+ "libc",
  "unicode-segmentation",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

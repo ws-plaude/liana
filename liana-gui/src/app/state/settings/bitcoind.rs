@@ -4,7 +4,6 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use chrono::{NaiveDate, Utc};
 use iced::{clipboard, Task};
 use tracing::info;
 
@@ -13,7 +12,7 @@ use lianad::config::{
     BitcoinBackend, BitcoinConfig, BitcoindConfig, BitcoindRpcAuth, Config, ElectrumConfig,
 };
 
-use liana_ui::{component::form, widget::Element};
+use liana_ui::{component::form, date::ymd_to_unix, widget::Element};
 
 use crate::{
     app::{cache::Cache, error::Error, message::Message, state::settings::State, view},
@@ -571,14 +570,11 @@ impl RescanSetting {
                 }
             }
             view::SettingsEditMessage::Confirm => {
-                let t = if let Some(date) = NaiveDate::from_ymd_opt(
+                let t = if let Some(date) = ymd_to_unix(
                     i32::from_str(&self.year.value).unwrap_or(1),
                     u32::from_str(&self.month.value).unwrap_or(1),
                     u32::from_str(&self.day.value).unwrap_or(1),
-                )
-                .and_then(|d| d.and_hms_opt(0, 0, 0))
-                .map(|d| d.and_utc().timestamp())
-                {
+                ) {
                     match cache.network {
                         Network::Bitcoin => {
                             if date < MAINNET_GENESIS_BLOCK_TIMESTAMP {
@@ -629,7 +625,7 @@ impl RescanSetting {
                     self.invalid_date = true;
                     return Task::none();
                 };
-                if t > Utc::now().timestamp() {
+                if t > crate::utils::now().as_secs() as i64 {
                     self.future_date = true;
                     return Task::none();
                 }

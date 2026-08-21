@@ -15,6 +15,7 @@ use liana_gui::{
         BackendType, ServiceConfig, ServiceConfigResource, BUSINESS_MAINNET_API_URL,
         BUSINESS_SIGNET_API_URL,
     },
+    utils::now,
 };
 use miniscript::bitcoin::Network;
 use std::{
@@ -253,7 +254,7 @@ impl Client {
                     };
 
                     let tokens = &account.tokens;
-                    let now = chrono::Utc::now().timestamp();
+                    let now = now().as_secs() as i64;
 
                     // Refresh if token expires within 5 minutes (300 seconds)
                     const REFRESH_THRESHOLD_SECS: i64 = 300;
@@ -370,7 +371,7 @@ impl Client {
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
             for account in cache.accounts {
-                let now = chrono::Utc::now().timestamp();
+                let now = now().as_secs() as i64;
 
                 if account.tokens.expires_at > now + 60 {
                     // Token still valid
@@ -628,7 +629,7 @@ fn try_get_cached_token(data: &TokenRetrievalData) -> Option<String> {
         match Account::from_cache_by_email(&network_dir, &email) {
             Ok(Some(account)) => {
                 let tokens = &account.tokens;
-                let now = chrono::Utc::now().timestamp();
+                let now = now().as_secs() as i64;
 
                 // Check if token is expired (with some buffer time)
                 if tokens.expires_at > now + 60 {

@@ -1,5 +1,6 @@
 pub mod color;
 pub mod component;
+pub mod date;
 pub mod font;
 pub mod icon;
 pub mod image;

@@ -1,4 +1,3 @@
-use chrono::{DateTime, Local};
 use liana_connect::ws_business::{Key, PolicyTemplate, SecondaryPath, SpendingPath, UserRole};
 use std::collections::BTreeMap;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -143,13 +142,7 @@ impl AppState {
 
     /// Format a server timestamp as an absolute local date and time (e.g. "Jul 2, 2026 at 14:30").
     pub fn format_absolute_time(&self, server_timestamp: u64) -> String {
-        DateTime::from_timestamp(server_timestamp as i64, 0)
-            .map(|dt| {
-                dt.with_timezone(&Local)
-                    .format("%b %-d, %Y at %H:%M")
-                    .to_string()
-            })
-            .unwrap_or_default()
+        liana_ui::date::format_date_at_time(server_timestamp as i64)
     }
 
     /// Empty initial state. Debug overlays seed test data via the

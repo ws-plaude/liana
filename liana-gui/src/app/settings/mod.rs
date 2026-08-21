@@ -410,7 +410,7 @@ impl WalletId {
     }
     pub fn generate(descriptor: &LianaDescriptor) -> Self {
         WalletId {
-            timestamp: Some(chrono::Utc::now().timestamp()),
+            timestamp: Some(crate::utils::now().as_secs() as i64),
             descriptor_checksum: descriptor
                 .to_string()
                 .split_once('#')

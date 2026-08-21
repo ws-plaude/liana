@@ -431,7 +431,7 @@ pub struct Payment {
     pub address_label: Option<String>,
     pub amount: Amount,
     pub outpoint: OutPoint,
-    pub time: Option<chrono::DateTime<chrono::Utc>>,
+    pub time: Option<i64>,
     pub kind: PaymentKind,
 }
 
@@ -468,9 +468,7 @@ impl LabelsLoader for Payment {
 }
 
 pub fn payments_from_tx(history_tx: HistoryTransaction) -> Vec<Payment> {
-    let time = history_tx
-        .time
-        .map(|t| chrono::DateTime::<chrono::Utc>::from_timestamp(t as i64, 0).unwrap());
+    let time = history_tx.time.map(|t| t as i64);
     history_tx
         .tx
         .output

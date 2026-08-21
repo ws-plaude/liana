@@ -38,7 +38,6 @@ iced = { version = "0.14.0", default-features = false }
 iced_aw = "0.13.0"
 iced_runtime = "0.14.0"
 iced_core = "0.14.0"
-chrono = "0.4.38"
 jsonrpc = { version = "0.17", default-features = false }
 
 # Pinned to this version because they keep breaking their MSRV in point releases...

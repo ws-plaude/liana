@@ -7,7 +7,6 @@ use std::{
 };
 
 use async_trait::async_trait;
-use chrono::Utc;
 use liana::{
     descriptors::LianaDescriptor,
     miniscript::bitcoin::{
@@ -27,6 +26,7 @@ use crate::{
     dir::LianaDirectory,
     hw::HardwareWalletConfig,
     services::connect::client::cache::ConnectCacheError,
+    utils::now,
 };
 
 pub use liana_connect::wallets::api::{self, UserRole, DEFAULT_LIMIT, WALLET_ALIAS_MAXIMUM_LENGTH};
@@ -563,7 +563,7 @@ impl Daemon for BackendWalletClient {
                 serde_json::Value::String("unauthenticated".to_string()),
             ));
         }
-        if auth.expires_at < Utc::now().timestamp() + 60 {
+        if auth.expires_at < now().as_secs() as i64 + 60 {
             match self.inner.auth.try_write() {
                 Err(_) => {
                     // something is using the lock, we will try next time.
