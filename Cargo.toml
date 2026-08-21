@@ -64,7 +64,6 @@ rustls = { version = "0.23.35", default-features = false, features = ["ring", "s
 bdk_coin_select = "0.4"
 getrandom = "0.3.1"
 bip39 = "2.0"
-rdrand = "0.8"
 fern = "0.6"
 bip329 = { version = "0.3.0", default-features = false }
 async-trait = "0.1"

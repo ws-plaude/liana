@@ -2772,7 +2772,6 @@ dependencies = [
  "getrandom 0.3.1",
  "log",
  "miniscript",
- "rdrand",
  "serde",
 ]
 
@@ -4192,15 +4191,6 @@ name = "raw-window-handle"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "20675572f6f24e9e76ef639bc5552774ed45f1c30e2951e1e99c59888861c539"
-
-[[package]]
-name = "rdrand"
-version = "0.8.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d92195228612ac8eed47adbc2ed0f04e513a4ccb98175b6f2bd04d963b533655"
-dependencies = [
- "rand_core 0.6.4",
-]
 
 [[package]]
 name = "read-fonts"
