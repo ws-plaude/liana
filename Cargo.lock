@@ -578,7 +578,6 @@ dependencies = [
  "async-hwi",
  "chrono",
  "crossbeam",
- "email_address",
  "futures",
  "hex",
  "iced",
@@ -1306,15 +1305,6 @@ dependencies = [
  "sec1",
  "subtle",
  "zeroize",
-]
-
-[[package]]
-name = "email_address"
-version = "0.2.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e079f19b08ca6239f47f8ba8509c11cf3ea30095831f7fed61441475edd8c449"
-dependencies = [
- "serde",
 ]
 
 [[package]]
@@ -2845,7 +2835,6 @@ dependencies = [
  "base64 0.21.7",
  "bitcoin-encrypted-backup",
  "chrono",
- "email_address",
  "flate2",
  "fs2",
  "hex",

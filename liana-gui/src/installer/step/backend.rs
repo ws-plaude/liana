@@ -211,12 +211,7 @@ impl Step for RemoteBackendLogin {
             },
             ConnectionStep::EnterEmail { email } => match message {
                 Message::SelectBackend(message::SelectBackend::EmailEdited(value)) => {
-                    email.valid = value.is_empty()
-                        || email_address::EmailAddress::parse_with_options(
-                            &value,
-                            email_address::Options::default().with_required_tld(),
-                        )
-                        .is_ok();
+                    email.valid = value.is_empty() || crate::utils::is_valid_email(&value);
                     email.value = value;
                 }
                 Message::SelectBackend(message::SelectBackend::ExistingConnectAccounts(

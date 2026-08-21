@@ -102,11 +102,7 @@ impl KeysViewState {
 
     pub fn is_email_valid(&self) -> bool {
         if let Some(modal) = &self.edit_key_modal {
-            email_address::EmailAddress::parse_with_options(
-                &modal.email,
-                email_address::Options::default().with_required_tld(),
-            )
-            .is_ok()
+            liana_gui::utils::is_valid_email(&modal.email)
         } else {
             false
         }

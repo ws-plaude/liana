@@ -510,11 +510,7 @@ impl State for BackendSettingsState {
                 }
                 view::RemoteBackendSettingsMessage::EditInvitationEmail(email) => {
                     if !self.processing {
-                        self.email_form.valid = email_address::EmailAddress::parse_with_options(
-                            &email,
-                            email_address::Options::default().with_required_tld(),
-                        )
-                        .is_ok();
+                        self.email_form.valid = crate::utils::is_valid_email(&email);
                         self.email_form.value = email;
                         self.success = false;
                     }

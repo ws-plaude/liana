@@ -1,4 +1,5 @@
 use liana_connect::{keys::api::Provider, ws_business};
+use liana_gui::utils::is_valid_email;
 use std::fmt::{self, Display};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -116,12 +117,4 @@ impl EditKeyModalState {
             .any(|option| option.email.eq_ignore_ascii_case(email)))
         .then_some(email.to_string())
     }
-}
-
-fn is_valid_email(email: &str) -> bool {
-    email_address::EmailAddress::parse_with_options(
-        email,
-        email_address::Options::default().with_required_tld(),
-    )
-    .is_ok()
 }

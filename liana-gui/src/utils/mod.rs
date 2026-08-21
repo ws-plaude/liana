@@ -41,6 +41,25 @@ pub fn open_url(url: &str) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Practical email check for form hinting: one '@', a non-empty local part
+/// and a dotted domain (TLD required). The backend stays authoritative.
+pub fn is_valid_email(email: &str) -> bool {
+    let Some((local, domain)) = email.rsplit_once('@') else {
+        return false;
+    };
+    if local.is_empty() || local.len() > 64 || email.contains(char::is_whitespace) {
+        return false;
+    }
+    let labels: Vec<&str> = domain.split('.').collect();
+    labels.len() >= 2
+        && labels.iter().all(|label| {
+            !label.is_empty()
+                && !label.starts_with('-')
+                && !label.ends_with('-')
+                && label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+        })
+}
+
 /// Takes an exclusive advisory lock on `file`, off the async runtime as
 /// acquisition blocks while another process holds the lock. The lock is
 /// released when the returned file is dropped.
@@ -75,4 +94,23 @@ pub fn default_derivation_path(network: Network) -> DerivationPath {
         }
     })
     .unwrap()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_valid_email;
+
+    #[test]
+    fn email_validation() {
+        assert!(is_valid_email("a@b.co"));
+        assert!(is_valid_email("first.last@sub.domain.org"));
+        assert!(is_valid_email("user+tag@wizardsardine.com"));
+        assert!(!is_valid_email(""));
+        assert!(!is_valid_email("no-at-sign.com"));
+        assert!(!is_valid_email("a@no-tld"));
+        assert!(!is_valid_email("a@domain."));
+        assert!(!is_valid_email("@domain.com"));
+        assert!(!is_valid_email("with space@domain.com"));
+        assert!(!is_valid_email("a@-bad.com"));
+    }
 }
