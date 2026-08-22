@@ -33,7 +33,7 @@ let
     TOOLKIT_x86_64_pc_windows_gnu = "${pkgs.pkgsCross.mingwW64.stdenv.cc.bintools.bintools}/bin";
     WINDRES_x86_64_pc_windows_gnu = "${pkgs.pkgsCross.mingwW64.stdenv.cc.targetPrefix}windres";
 
-    cargoExtraArgs = "-p liana-gui --no-default-features";
+    cargoExtraArgs = "-p liana-gui --no-default-features --features windows-icon";
     depsBuildBuild = with pkgs; [
       pkgsCross.mingwW64.stdenv.cc
       pkgsCross.mingwW64.buildPackages.binutils

@@ -17,14 +17,13 @@ let
       src = rootPath;
     };
     # Skip liana-gui icon so liana-business can use its own
-    LIANA_SKIP_GUI_ICON = "1";
   };
 
   lianaBusinessInfo = craneLib.crateNameFromCargoToml { cargoToml = rootPath + "/liana-business/Cargo.toml"; };
 
   # Windows-specific settings shared between deps and final build
   windowsSettings = {
-    inherit (commonBuildSettings) src strictDeps cargoLock cargoVendorDir LIANA_SKIP_GUI_ICON;
+    inherit (commonBuildSettings) src strictDeps cargoLock cargoVendorDir;
 
     SOURCE_DATE_EPOCH = 1;
     CARGO_BUILD_TARGET = "x86_64-pc-windows-gnu";
@@ -43,8 +42,6 @@ let
       pkgsCross.mingwW64.buildPackages.binutils-unwrapped
     ];
   };
-
-  # Build deps separately with LIANA_SKIP_GUI_ICON to ensure liana-gui doesn't set its icon
   windowsDeps = craneLib.buildDepsOnly (windowsSettings // {
     pname = "liana-business-deps";
     version = lianaBusinessInfo.version;
@@ -57,7 +54,7 @@ let
 
     cargoArtifacts = windowsDeps;
 
-    cargoExtraArgs = "-p liana-business --no-default-features";
+    cargoExtraArgs = "-p liana-business --no-default-features --features windows-icon";
 
     installPhaseCommand = ''
       mkdir -p $out/x86_64-pc-windows-gnu

@@ -59,7 +59,9 @@ flate2 = { workspace = true, default-features = false }
 [features]
 default = ["debugger"]
 debugger = []
-skip-windows-icon = []
+# Embeds the .ico in the executable. Opt-in because winresource drags the whole
+# toml parser into every build, and only the Windows release needs it.
+windows-icon = ["dep:winresource"]
 
 [build-dependencies]
-winresource = { workspace = true }
+winresource = { workspace = true, optional = true }
