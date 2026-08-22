@@ -26,7 +26,6 @@ liana-ui = { path = "../liana-ui" }
 hex = { workspace = true }
 
 iced = { workspace = true, default-features = false, features = ["thread-pool", "qr_code", "image-without-codecs", "lazy", "advanced", "tiny-skia", "x11", "wayland"] }
-iced_aw = { workspace = true, features = ["context_menu"] }
 iced_runtime = { workspace = true }
 
 futures = { workspace = true }

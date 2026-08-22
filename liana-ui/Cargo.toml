@@ -10,7 +10,6 @@ iced = { workspace = true, default-features = false, features = ["image-without-
 # The app only decodes png (embedded window icons); enable that single codec on
 # the image crate iced already pulls, instead of iced's full codec set.
 image = { version = "0.25", default-features = false, features = ["png"] }
-iced_aw = { workspace = true, features = ["context_menu"] }
 iced_core = { workspace = true }
 iced_runtime = { workspace = true }
 unicode-segmentation = { workspace = true }

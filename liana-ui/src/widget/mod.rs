@@ -1,3 +1,4 @@
+pub mod context_menu;
 mod copy_button;
 mod cursor;
 mod editor;
@@ -19,6 +20,8 @@ pub type Stack<'a, Message> = iced::widget::Stack<'a, Message, Theme, Renderer>;
 pub type Button<'a, Message> = iced::widget::Button<'a, Message, Theme, Renderer>;
 pub type BistateButton<'a, Message> = copy_button::BistateButton<'a, Message, Theme, Renderer>;
 pub type MenuButton<'a, Message> = menu_button::MenuButton<'a, Message, Theme, Renderer>;
+pub type ContextMenu<'a, Overlay, Message> =
+    context_menu::ContextMenu<'a, Overlay, Message, Theme, Renderer>;
 pub type CheckBox<'a, Message> = iced::widget::Checkbox<'a, Message, Theme, Renderer>;
 pub type Radio<'a, Message> = iced::widget::Radio<'a, Message, Theme, Renderer>;
 pub type Text<'a> = iced::widget::Text<'a, Theme, Renderer>;
