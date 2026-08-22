@@ -2,7 +2,6 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::iter::FromIterator;
 
-use async_trait::async_trait;
 use lianad::bip329::Labels;
 use lianad::commands::{GetLabelsBip329Result, UpdateDerivIndexesResult};
 use log::{error, info};
@@ -57,7 +56,6 @@ impl<C: Client> Lianad<C> {
     }
 }
 
-#[async_trait]
 impl<C: Client + Send + Sync + Debug> Daemon for Lianad<C> {
     fn backend(&self) -> DaemonBackend {
         DaemonBackend::ExternalLianad

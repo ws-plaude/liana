@@ -1,8 +1,6 @@
 use super::source::PriceSource;
 use super::Currency;
 
-use async_trait::async_trait;
-
 use liana_connect::http::NotSuccessResponseInfo;
 
 #[derive(Debug, Clone)]
@@ -37,7 +35,7 @@ impl std::fmt::Display for PriceApiError {
     }
 }
 
-#[async_trait]
+#[allow(async_fn_in_trait)]
 pub trait PriceApi {
     async fn get_price(&self, currency: Currency) -> Result<GetPriceResult, PriceApiError>;
 

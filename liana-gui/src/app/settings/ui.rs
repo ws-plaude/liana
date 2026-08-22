@@ -11,7 +11,7 @@ use liana_ui::widget::Element;
 
 use crate::{
     app::{cache::Cache, wallet::Wallet, Config},
-    daemon::{Daemon, DaemonBackend},
+    daemon::DaemonBackend,
     dir::LianaDirectory,
 };
 
@@ -41,7 +41,7 @@ where
     fn new(
         data_dir: LianaDirectory,
         wallet: Arc<Wallet>,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         daemon_backend: DaemonBackend,
         internal_bitcoind: bool,
         config: Arc<Config>,
@@ -55,7 +55,7 @@ where
     /// and side effects are handled.
     fn update(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         cache: &Cache,
         message: Message,
     ) -> Task<Message>;
@@ -84,7 +84,7 @@ where
     /// Called when the user switches wallets or when wallet data is updated.
     fn reload(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         wallet: Arc<Wallet>,
     ) -> Task<Message>;
 }

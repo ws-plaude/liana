@@ -14,7 +14,6 @@ use crate::{
         view,
         wallet::Wallet,
     },
-    daemon::Daemon,
     dir::LianaDirectory,
     services::fiat::Currency,
 };
@@ -88,7 +87,7 @@ impl State for GeneralSettingsState {
     }
     fn reload(
         &mut self,
-        _daemon: Arc<dyn Daemon + Sync + Send>,
+        _daemon: Arc<crate::daemon::AnyDaemon>,
         wallet: Arc<Wallet>,
     ) -> iced::Task<Message> {
         self.new_price_setting = wallet_price_setting_or_default(&wallet);
@@ -112,7 +111,7 @@ impl State for GeneralSettingsState {
 
     fn update(
         &mut self,
-        _daemon: Arc<dyn Daemon + Sync + Send>,
+        _daemon: Arc<crate::daemon::AnyDaemon>,
         cache: &Cache,
         message: Message,
     ) -> Task<Message> {

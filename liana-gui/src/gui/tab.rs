@@ -679,7 +679,7 @@ pub fn create_app_with_remote_backend(
                 .expect("Datadir should be conform"),
         ),
         config,
-        Arc::new(remote_backend),
+        Arc::new(crate::daemon::AnyDaemon::Backend(Box::new(remote_backend))),
         liana_dir,
         None,
         false,
@@ -784,9 +784,11 @@ async fn connect_for_business(
     let (wallet_client, wallet) = client.connect_wallet(wallet);
 
     // Get coins
-    let coins = coins_to_cache(std::sync::Arc::new(wallet_client.clone()))
-        .await
-        .map_err(|e| login::Error::Unexpected(e.to_string()))?;
+    let coins = coins_to_cache(std::sync::Arc::new(crate::daemon::AnyDaemon::Backend(
+        Box::new(wallet_client.clone()),
+    )))
+    .await
+    .map_err(|e| login::Error::Unexpected(e.to_string()))?;
 
     // Get settings
     let settings = wallet_client

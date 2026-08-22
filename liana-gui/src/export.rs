@@ -255,14 +255,14 @@ pub enum Progress {
 pub struct Export {
     pub receiver: UnboundedReceiver<Progress>,
     pub sender: Option<UnboundedSender<Progress>>,
-    pub daemon: Option<Arc<dyn Daemon + Sync + Send>>,
+    pub daemon: Option<Arc<crate::daemon::AnyDaemon>>,
     pub path: Box<PathBuf>,
     pub export_type: ImportExportType,
 }
 
 impl Export {
     pub fn new(
-        daemon: Option<Arc<dyn Daemon + Sync + Send>>,
+        daemon: Option<Arc<crate::daemon::AnyDaemon>>,
         path: Box<PathBuf>,
         export_type: ImportExportType,
     ) -> Self {
@@ -279,7 +279,7 @@ impl Export {
     pub async fn export_logic(
         export_type: ImportExportType,
         sender: UnboundedSender<Progress>,
-        daemon: Option<Arc<dyn Daemon + Sync + Send>>,
+        daemon: Option<Arc<crate::daemon::AnyDaemon>>,
         path: PathBuf,
     ) {
         if let Err(e) = match export_type {
@@ -341,7 +341,7 @@ impl Export {
 }
 
 pub fn export_subscription(
-    daemon: Option<Arc<dyn Daemon + Sync + Send>>,
+    daemon: Option<Arc<crate::daemon::AnyDaemon>>,
     path: PathBuf,
     export_type: ImportExportType,
 ) -> impl Stream<Item = Progress> {
@@ -385,7 +385,7 @@ pub fn export_subscription(
 
 pub async fn export_transactions(
     sender: &UnboundedSender<Progress>,
-    daemon: Option<Arc<dyn Daemon + Sync + Send>>,
+    daemon: Option<Arc<crate::daemon::AnyDaemon>>,
     path: PathBuf,
 ) -> Result<(), Error> {
     let daemon = daemon.ok_or(Error::DaemonMissing)?;
@@ -591,7 +591,7 @@ pub async fn export_encrypted_descriptor(
 }
 
 pub async fn import_psbt(
-    daemon: Option<Arc<dyn Daemon + Sync + Send>>,
+    daemon: Option<Arc<crate::daemon::AnyDaemon>>,
     sender: &UnboundedSender<Progress>,
     path: PathBuf,
     txid: Option<Txid>,
@@ -755,7 +755,7 @@ pub async fn import_backup(
     wallet: Arc<Wallet>,
     sender: &UnboundedSender<Progress>,
     path: PathBuf,
-    daemon: Option<Arc<dyn Daemon + Sync + Send>>,
+    daemon: Option<Arc<crate::daemon::AnyDaemon>>,
 ) -> Result<(), Error> {
     let daemon = daemon.ok_or(Error::DaemonMissing)?;
 
@@ -1167,7 +1167,7 @@ pub async fn import_backup_at_launch(
     cache: Cache,
     wallet: Arc<Wallet>,
     config: Config,
-    daemon: Arc<dyn Daemon + Sync + Send>,
+    daemon: Arc<crate::daemon::AnyDaemon>,
     datadir: LianaDirectory,
     internal_bitcoind: Option<Bitcoind>,
     backup: Backup,
@@ -1176,7 +1176,7 @@ pub async fn import_backup_at_launch(
         Cache,
         Arc<Wallet>,
         Config,
-        Arc<dyn Daemon + Sync + Send>,
+        Arc<crate::daemon::AnyDaemon>,
         LianaDirectory,
         Option<Bitcoind>,
     ),
@@ -1267,7 +1267,7 @@ pub async fn import_backup_at_launch(
 
 pub async fn export_labels(
     sender: &UnboundedSender<Progress>,
-    daemon: Option<Arc<dyn Daemon + Sync + Send>>,
+    daemon: Option<Arc<crate::daemon::AnyDaemon>>,
     path: PathBuf,
 ) -> Result<(), Error> {
     let daemon = daemon.ok_or(Error::DaemonMissing)?;
@@ -1300,7 +1300,7 @@ pub async fn app_backup(
     network: Network,
     config: Arc<Config>,
     wallet: Arc<Wallet>,
-    daemon: Arc<dyn Daemon + Sync + Send>,
+    daemon: Arc<crate::daemon::AnyDaemon>,
     sender: &UnboundedSender<Progress>,
 ) -> Result<String, backup::Error> {
     let backup = Backup::from_app(datadir, network, config, wallet, daemon, sender).await?;
@@ -1312,7 +1312,7 @@ pub async fn app_backup_export(
     network: Network,
     config: Arc<Config>,
     wallet: Arc<Wallet>,
-    daemon: Arc<dyn Daemon + Sync + Send>,
+    daemon: Arc<crate::daemon::AnyDaemon>,
     path: PathBuf,
     sender: &UnboundedSender<Progress>,
 ) -> Result<(), Error> {

@@ -132,7 +132,7 @@ impl Backup {
         network: Network,
         config: Arc<Config>,
         wallet: Arc<Wallet>,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         sender: &UnboundedSender<Progress>,
     ) -> Result<Self, Error> {
         let mut proprietary = serde_json::Map::new();
@@ -273,7 +273,7 @@ impl Backup {
 }
 
 async fn get_transactions(
-    daemon: &Arc<dyn Daemon + Sync + Send>,
+    daemon: &Arc<crate::daemon::AnyDaemon>,
 ) -> Result<Vec<HistoryTransaction>, Error> {
     let max = match daemon.backend() {
         DaemonBackend::RemoteBackend => DEFAULT_LIMIT as u64,

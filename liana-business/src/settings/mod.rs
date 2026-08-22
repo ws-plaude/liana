@@ -220,7 +220,9 @@ impl SettingsTrait for BusinessSettings {
                 cache,
                 app_wallet,
                 config,
-                Arc::new(remote_backend),
+                Arc::new(liana_gui::daemon::AnyDaemon::Backend(Box::new(
+                    remote_backend,
+                ))),
                 liana_dir,
                 None,
                 false,

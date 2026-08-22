@@ -35,7 +35,7 @@ use crate::{
 use super::export::ExportModal;
 
 pub trait Modal {
-    fn load(&self, _daemon: Arc<dyn Daemon + Sync + Send>) -> Task<Message> {
+    fn load(&self, _daemon: Arc<crate::daemon::AnyDaemon>) -> Task<Message> {
         Task::none()
     }
     fn subscription(&self) -> Subscription<Message> {
@@ -43,7 +43,7 @@ pub trait Modal {
     }
     fn update(
         &mut self,
-        _daemon: Arc<dyn Daemon + Sync + Send>,
+        _daemon: Arc<crate::daemon::AnyDaemon>,
         _message: Message,
         _tx: &mut SpendTx,
     ) -> Task<Message> {
@@ -120,7 +120,7 @@ impl PsbtState {
         }
     }
 
-    pub fn load(&self, daemon: Arc<dyn Daemon + Sync + Send>) -> Task<Message> {
+    pub fn load(&self, daemon: Arc<crate::daemon::AnyDaemon>) -> Task<Message> {
         if let Some(modal) = &self.modal {
             modal.as_ref().load(daemon)
         } else {
@@ -130,7 +130,7 @@ impl PsbtState {
 
     pub fn update(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         cache: &Cache,
         message: Message,
     ) -> Task<Message> {
@@ -311,7 +311,7 @@ pub struct SaveModal {
 impl Modal for SaveModal {
     fn update(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         message: Message,
         tx: &mut SpendTx,
     ) -> Task<Message> {
@@ -362,7 +362,7 @@ pub struct BroadcastModal {
 impl Modal for BroadcastModal {
     fn update(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         message: Message,
         tx: &mut SpendTx,
     ) -> Task<Message> {
@@ -415,7 +415,7 @@ pub struct DeleteModal {
 impl Modal for DeleteModal {
     fn update(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         message: Message,
         tx: &mut SpendTx,
     ) -> Task<Message> {
@@ -496,7 +496,7 @@ impl Modal for SignModal {
 
     fn update(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         message: Message,
         tx: &mut SpendTx,
     ) -> Task<Message> {
@@ -766,7 +766,7 @@ mod tests {
             ]);
             let wallet = Arc::new(Wallet::new(LianaDescriptor::from_str(DESC).unwrap()));
             let sandbox: Sandbox<PsbtsPanel> = Sandbox::new(PsbtsPanel::new(wallet.clone()));
-            let client = Arc::new(Lianad::new(daemon.run()));
+            let client = Arc::new(crate::daemon::AnyDaemon::Mock(Lianad::new(daemon.run())));
             let cache = Cache::default();
             let sandbox = sandbox
                 .load(client.clone(), &Cache::default(), wallet)

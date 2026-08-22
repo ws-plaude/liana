@@ -66,7 +66,7 @@ impl<S: SettingsTrait> Panels<S> {
     fn new(
         cache: &Cache,
         wallet: Arc<Wallet>,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         data_dir: LianaDirectory,
         daemon_backend: DaemonBackend,
         internal_bitcoind: Option<&Bitcoind>,
@@ -162,7 +162,7 @@ impl<S: SettingsTrait> Panels<S> {
 pub struct App<S: SettingsTrait = LianaSettings> {
     cache: Cache,
     wallet: Arc<Wallet>,
-    daemon: Arc<dyn Daemon + Sync + Send>,
+    daemon: Arc<crate::daemon::AnyDaemon>,
     internal_bitcoind: Option<Bitcoind>,
 
     panels: Panels<S>,
@@ -176,7 +176,7 @@ impl<S: SettingsTrait> App<S> {
         cache: Cache,
         wallet: Arc<Wallet>,
         config: Config,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         data_dir: LianaDirectory,
         internal_bitcoind: Option<Bitcoind>,
         restored_from_backup: bool,
@@ -581,7 +581,7 @@ impl<S: SettingsTrait> App<S> {
         block_on(async { self.daemon.stop().await })?;
         let network = cfg.bitcoin_config.network;
         let daemon = EmbeddedDaemon::start(cfg)?;
-        self.daemon = Arc::new(daemon);
+        self.daemon = Arc::new(crate::daemon::AnyDaemon::Embedded(Box::new(daemon)));
         let mut daemon_config_path = datadir_path
             .network_directory(network)
             .lianad_data_directory(&self.wallet.id())

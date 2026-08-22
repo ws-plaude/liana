@@ -9,7 +9,6 @@ use crate::{
         self,
         view::{export::export_modal, Close},
     },
-    daemon::Daemon,
     export::{self, ImportExportMessage, ImportExportState, ImportExportType, Progress},
     file_picker::{FilePicker, Outcome},
 };
@@ -20,7 +19,7 @@ pub struct ExportModal {
     handle: Option<AbortHandle>,
     state: ImportExportState,
     error: Option<export::Error>,
-    daemon: Option<Arc<dyn Daemon + Sync + Send>>,
+    daemon: Option<Arc<crate::daemon::AnyDaemon>>,
     import_export_type: ImportExportType,
     /// Shown instead of the export view while the user is choosing the path.
     file_picker: Option<FilePicker>,
@@ -35,7 +34,7 @@ impl app::state::psbt::Modal for ExportModal {
 
     fn update(
         &mut self,
-        _daemon: Arc<dyn Daemon + Sync + Send>,
+        _daemon: Arc<crate::daemon::AnyDaemon>,
         message: app::Message,
         _tx: &mut crate::daemon::model::SpendTx,
     ) -> Task<app::Message> {
@@ -57,7 +56,7 @@ impl app::state::psbt::Modal for ExportModal {
 impl ExportModal {
     #[allow(clippy::new_without_default)]
     pub fn new(
-        daemon: Option<Arc<dyn Daemon + Sync + Send>>,
+        daemon: Option<Arc<crate::daemon::AnyDaemon>>,
         export_type: ImportExportType,
     ) -> Self {
         Self {

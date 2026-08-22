@@ -48,7 +48,7 @@ pub trait State {
     fn view<'a>(&'a self, cache: &'a Cache) -> Element<'a, view::Message>;
     fn update(
         &mut self,
-        _daemon: Arc<dyn Daemon + Sync + Send>,
+        _daemon: Arc<crate::daemon::AnyDaemon>,
         _cache: &Cache,
         _message: Message,
     ) -> Task<Message> {
@@ -60,7 +60,7 @@ pub trait State {
     fn interrupt(&mut self) {}
     fn reload(
         &mut self,
-        _daemon: Arc<dyn Daemon + Sync + Send>,
+        _daemon: Arc<crate::daemon::AnyDaemon>,
         _wallet: Arc<Wallet>,
     ) -> Task<Message> {
         Task::none()
@@ -226,7 +226,7 @@ impl State for Home {
 
     fn update(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         cache: &Cache,
         message: Message,
     ) -> Task<Message> {
@@ -418,7 +418,7 @@ impl State for Home {
 
     fn reload(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         wallet: Arc<Wallet>,
     ) -> Task<Message> {
         // If the wallet is syncing, we expect it to finish soon and so better to wait for

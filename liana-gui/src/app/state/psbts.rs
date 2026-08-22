@@ -63,7 +63,7 @@ impl State for PsbtsPanel {
 
     fn update(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         cache: &Cache,
         message: Message,
     ) -> Task<Message> {
@@ -155,7 +155,7 @@ impl State for PsbtsPanel {
 
     fn reload(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         wallet: Arc<Wallet>,
     ) -> Task<Message> {
         self.wallet = wallet;

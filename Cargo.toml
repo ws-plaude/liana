@@ -67,7 +67,6 @@ getrandom = "0.3.1"
 bip39 = "2.0"
 fern = "0.6"
 bip329 = { package = "bwk-bip329", git = "https://github.com/ws-plaude/bip329", rev = "2d56f0b4cf1ed17acca9728df72bceda8d982826", default-features = false }
-async-trait = "0.1"
 bwk-hwi = { git = "https://github.com/ws-plaude/bwk", rev = "f8ee45e2a863faf5fbf5152bc83446742bd47285", default-features = false, features = ["ledger", "specter", "coldcard", "bitbox", "jade", "minreq", "service"] }
 hex = "0.4.3"
 futures = "0.3"

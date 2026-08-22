@@ -5,7 +5,6 @@ use std::collections::{HashMap, HashSet};
 
 use super::{model::*, node, Daemon, DaemonBackend, DaemonError};
 use crate::dir::LianaDirectory;
-use async_trait::async_trait;
 use liana::miniscript::bitcoin::{
     address, bip32::ChildNumber, psbt::Psbt, Address, Network, OutPoint, Txid,
 };
@@ -54,7 +53,6 @@ impl std::fmt::Debug for EmbeddedDaemon {
     }
 }
 
-#[async_trait]
 impl Daemon for EmbeddedDaemon {
     fn backend(&self) -> DaemonBackend {
         let node_type = self

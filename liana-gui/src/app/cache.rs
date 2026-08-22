@@ -95,7 +95,7 @@ impl std::default::Default for DaemonCache {
 
 /// Get the coins that should be cached.
 pub async fn coins_to_cache(
-    daemon: Arc<dyn Daemon + Sync + Send>,
+    daemon: Arc<crate::daemon::AnyDaemon>,
 ) -> Result<ListCoinsResult, DaemonError> {
     daemon
         .list_coins(&[CoinStatus::Unconfirmed, CoinStatus::Confirmed], &[])

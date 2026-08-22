@@ -48,7 +48,7 @@ const SYNCING_PROGRESS_3: &str = "Bitcoin Core is synchronising the blockchain. 
 type Lianad = client::Lianad<client::jsonrpc::JsonRPCClient>;
 type StartedResult = Result<
     (
-        Arc<dyn Daemon + Sync + Send>,
+        Arc<crate::daemon::AnyDaemon>,
         Option<Bitcoind>,
         GetInfoResult,
     ),
@@ -73,7 +73,7 @@ pub enum Step {
     Connecting,
     StartingDaemon,
     Syncing {
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         progress: f64,
         bitcoind_logs: String,
     },
@@ -90,7 +90,7 @@ pub enum Message {
             (
                 Arc<Wallet>,
                 Cache,
-                Arc<dyn Daemon + Sync + Send>,
+                Arc<crate::daemon::AnyDaemon>,
                 Option<Bitcoind>,
                 Option<Backup>,
             ),
@@ -103,7 +103,7 @@ pub enum Message {
                 Cache,
                 Arc<Wallet>,
                 app::Config,
-                Arc<dyn Daemon + Sync + Send>,
+                Arc<crate::daemon::AnyDaemon>,
                 LianaDirectory,
                 Option<Bitcoind>,
             ),
@@ -112,7 +112,7 @@ pub enum Message {
         /* restored_from_backup */ bool,
     ),
     Started(StartedResult),
-    Loaded(Result<(Arc<dyn Daemon + Sync + Send>, GetInfoResult), Error>),
+    Loaded(Result<(Arc<crate::daemon::AnyDaemon>, GetInfoResult), Error>),
     BitcoindLog(Option<String>),
     Failure(DaemonError),
     None,
@@ -159,7 +159,7 @@ impl Loader {
 
     fn maybe_skip_syncing(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         info: GetInfoResult,
     ) -> Task<Message> {
         // If the node is not Bitcoin Core or otherwise the wallet was previously synced (blockheight > 0),
@@ -189,7 +189,7 @@ impl Loader {
 
     fn on_load(
         &mut self,
-        res: Result<(Arc<dyn Daemon + Sync + Send>, GetInfoResult), Error>,
+        res: Result<(Arc<crate::daemon::AnyDaemon>, GetInfoResult), Error>,
     ) -> Task<Message> {
         match res {
             Ok((daemon, info)) => {
@@ -431,7 +431,7 @@ fn get_bitcoind_log(log_path: PathBuf) -> impl Stream<Item = Option<String>> {
 
 pub async fn load_application(
     wallet_settings: WalletSettings,
-    daemon: Arc<dyn Daemon + Sync + Send>,
+    daemon: Arc<crate::daemon::AnyDaemon>,
     info: GetInfoResult,
     datadir_path: LianaDirectory,
     network: bitcoin::Network,
@@ -441,7 +441,7 @@ pub async fn load_application(
     (
         Arc<Wallet>,
         Cache,
-        Arc<dyn Daemon + Sync + Send>,
+        Arc<crate::daemon::AnyDaemon>,
         Option<Bitcoind>,
         Option<Backup>,
     ),
@@ -568,7 +568,7 @@ pub fn cover<'a, T: 'a + Clone, C: Into<Element<'a, T>>>(
 
 async fn connect(
     socket_path: PathBuf,
-) -> Result<(Arc<dyn Daemon + Sync + Send>, GetInfoResult), Error> {
+) -> Result<(Arc<crate::daemon::AnyDaemon>, GetInfoResult), Error> {
     let client = client::jsonrpc::JsonRPCClient::new(socket_path);
     let daemon = Lianad::new(client);
 
@@ -576,7 +576,7 @@ async fn connect(
     let info = daemon.get_info().await?;
     info!("Connected to external daemon");
 
-    Ok((Arc::new(daemon), info))
+    Ok((Arc::new(crate::daemon::AnyDaemon::Lianad(daemon)), info))
 }
 
 // Daemon can start only if a config path is given.
@@ -610,11 +610,15 @@ pub async fn start_bitcoind_and_daemon(
     let daemon = EmbeddedDaemon::start(config)?;
     let info = daemon.get_info().await?;
 
-    Ok((Arc::new(daemon), bitcoind, info))
+    Ok((
+        Arc::new(crate::daemon::AnyDaemon::Embedded(Box::new(daemon))),
+        bitcoind,
+        info,
+    ))
 }
 
 async fn sync(
-    daemon: Arc<dyn Daemon + Sync + Send>,
+    daemon: Arc<crate::daemon::AnyDaemon>,
     sleep: bool,
 ) -> Result<GetInfoResult, DaemonError> {
     if sleep {

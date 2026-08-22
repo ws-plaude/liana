@@ -87,7 +87,7 @@ impl BitcoindSettingsState {
 impl State for BitcoindSettingsState {
     fn update(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         cache: &Cache,
         message: Message,
     ) -> Task<Message> {
@@ -308,7 +308,7 @@ impl BitcoindSettings {
 
     fn update(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         _cache: &Cache,
         message: view::SettingsEditMessage,
     ) -> Task<Message> {
@@ -448,7 +448,7 @@ impl ElectrumSettings {
 
     fn update(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         _cache: &Cache,
         message: view::SettingsEditMessage,
     ) -> Task<Message> {
@@ -551,7 +551,7 @@ impl RescanSetting {
 
     fn update(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         cache: &Cache,
         message: view::SettingsEditMessage,
     ) -> Task<Message> {

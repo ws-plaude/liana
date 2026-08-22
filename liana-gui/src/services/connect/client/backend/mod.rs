@@ -6,7 +6,6 @@ use std::{
     },
 };
 
-use async_trait::async_trait;
 use futures::lock::Mutex;
 use liana::{
     descriptors::LianaDescriptor,
@@ -519,7 +518,6 @@ impl BackendWalletClient {
     }
 }
 
-#[async_trait]
 impl Daemon for BackendWalletClient {
     fn backend(&self) -> DaemonBackend {
         DaemonBackend::RemoteBackend

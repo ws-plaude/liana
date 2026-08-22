@@ -79,7 +79,7 @@ impl SettingsUI<Message> for LianaSettingsUI {
     fn new(
         data_dir: LianaDirectory,
         wallet: Arc<Wallet>,
-        _daemon: Arc<dyn Daemon + Sync + Send>,
+        _daemon: Arc<crate::daemon::AnyDaemon>,
         daemon_backend: DaemonBackend,
         internal_bitcoind: bool,
         config: Arc<Config>,
@@ -97,7 +97,7 @@ impl SettingsUI<Message> for LianaSettingsUI {
 
     fn update(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         cache: &Cache,
         message: Message,
     ) -> Task<Message> {
@@ -195,7 +195,7 @@ impl SettingsUI<Message> for LianaSettingsUI {
 
     fn reload(
         &mut self,
-        _daemon: Arc<dyn Daemon + Sync + Send>,
+        _daemon: Arc<crate::daemon::AnyDaemon>,
         wallet: Arc<Wallet>,
     ) -> Task<Message> {
         self.setting = None;
@@ -208,7 +208,7 @@ impl SettingsUI<Message> for LianaSettingsUI {
 impl State for LianaSettingsUI {
     fn update(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         cache: &Cache,
         message: Message,
     ) -> Task<Message> {
@@ -230,7 +230,7 @@ impl State for LianaSettingsUI {
 
     fn reload(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         wallet: Arc<Wallet>,
     ) -> Task<Message> {
         <Self as SettingsUI<Message>>::reload(self, daemon, wallet)
@@ -294,7 +294,7 @@ impl State for ImportExportSettingsState {
 
     fn update(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         cache: &Cache,
         message: Message,
     ) -> Task<Message> {
@@ -414,7 +414,7 @@ impl State for AboutSettingsState {
 
     fn update(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         _cache: &Cache,
         message: Message,
     ) -> Task<Message> {
@@ -436,7 +436,7 @@ impl State for AboutSettingsState {
 
     fn reload(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         _wallet: Arc<Wallet>,
     ) -> Task<Message> {
         Task::perform(
@@ -484,7 +484,7 @@ impl State for BackendSettingsState {
 
     fn update(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         _cache: &Cache,
         message: Message,
     ) -> Task<Message> {

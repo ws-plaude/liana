@@ -17,7 +17,6 @@ name = "liana-gui"
 path = "src/main.rs"
 
 [dependencies]
-async-trait = { workspace = true }
 bwk-hwi = { workspace = true }
 liana = { path = "../liana" }
 liana-connect = { workspace = true }

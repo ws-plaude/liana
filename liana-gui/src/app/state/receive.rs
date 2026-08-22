@@ -159,7 +159,7 @@ impl State for ReceivePanel {
 
     fn update(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         cache: &Cache,
         message: Message,
     ) -> Task<Message> {
@@ -440,7 +440,7 @@ impl State for ReceivePanel {
 
     fn reload(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         wallet: Arc<Wallet>,
     ) -> Task<Message> {
         let data_dir = self.data_dir.clone();
@@ -510,7 +510,7 @@ impl VerifyAddressModal {
 
     fn update(
         &mut self,
-        _daemon: Arc<dyn Daemon + Sync + Send>,
+        _daemon: Arc<crate::daemon::AnyDaemon>,
         _cache: &Cache,
         message: Message,
     ) -> Task<Message> {
@@ -801,7 +801,7 @@ mod tests {
                 LianaDirectory::new(PathBuf::new()),
                 wallet.clone(),
             ));
-            let client = Arc::new(Lianad::new(daemon.run()));
+            let client = Arc::new(crate::daemon::AnyDaemon::Mock(Lianad::new(daemon.run())));
             let cache = Cache::default();
             let sandbox = sandbox.load(client.clone(), &cache, wallet).await;
             let sandbox = sandbox

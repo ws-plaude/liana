@@ -511,7 +511,10 @@ pub async fn connect(
     if connect_wallet_id.is_empty() {
         let first = wallets.first().cloned().ok_or(DaemonError::NoAnswer)?;
         let (wallet_client, wallet) = client.connect_wallet(first);
-        let coins = coins_to_cache(Arc::new(wallet_client.clone())).await?;
+        let coins = coins_to_cache(Arc::new(crate::daemon::AnyDaemon::Backend(Box::new(
+            wallet_client.clone(),
+        ))))
+        .await?;
         let settings = wallet_client.get_wallet_settings().await?;
 
         Ok(BackendState::WalletExists(
@@ -535,7 +538,10 @@ pub async fn connect(
         }
 
         let (wallet_client, wallet) = client.connect_wallet(wallet);
-        let coins = coins_to_cache(Arc::new(wallet_client.clone())).await?;
+        let coins = coins_to_cache(Arc::new(crate::daemon::AnyDaemon::Backend(Box::new(
+            wallet_client.clone(),
+        ))))
+        .await?;
         let settings = wallet_client.get_wallet_settings().await?;
 
         Ok(BackendState::WalletExists(
@@ -594,7 +600,10 @@ pub async fn connect_with_credentials(
         backfill_local_link(network_dir, &client, &auth_cfg).await?;
 
         let (wallet_client, wallet) = client.connect_wallet(wallet);
-        let coins = coins_to_cache(Arc::new(wallet_client.clone())).await?;
+        let coins = coins_to_cache(Arc::new(crate::daemon::AnyDaemon::Backend(Box::new(
+            wallet_client.clone(),
+        ))))
+        .await?;
         let settings = wallet_client.get_wallet_settings().await?;
         Ok(BackendState::WalletExists(
             wallet_client,

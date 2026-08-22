@@ -133,17 +133,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "175571dd1d178ced59193a6fc02dde1b972eb0bc56c892cde9beeceac5bf0f6b"
 
 [[package]]
-name = "async-trait"
-version = "0.1.86"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "644dd749086bf3771a2fbc5f256fdb982d53f011c7d5d560304eafeecebce79d"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
 name = "atomic-waker"
 version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1893,7 +1882,6 @@ dependencies = [
 name = "liana-gui"
 version = "15.0.0"
 dependencies = [
- "async-trait",
  "base64 0.21.7",
  "bitcoin-encrypted-backup",
  "bwk-hwi",

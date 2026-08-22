@@ -2,8 +2,6 @@ use super::api::{GetPriceResult, ListCurrenciesResult, PriceApi, PriceApiError};
 use super::source::PriceSource;
 use super::Currency;
 
-use async_trait::async_trait;
-
 use liana_connect::http::{self, Method};
 
 pub struct PriceClient<C> {
@@ -23,7 +21,6 @@ impl<C: Default> PriceClient<C> {
     }
 }
 
-#[async_trait]
 impl PriceApi for PriceClient<http::Client> {
     async fn get_price(&self, currency: Currency) -> Result<GetPriceResult, PriceApiError> {
         if self.source == PriceSource::Wizardsardine {
