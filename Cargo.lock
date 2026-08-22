@@ -283,12 +283,10 @@ dependencies = [
 [[package]]
 name = "bitcoin-encrypted-backup"
 version = "0.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f4e7cfd72b4e1eac651e2908660e90e65b729052bfd5d4004395a402c3e655cc"
+source = "git+https://github.com/ws-plaude/bitcoin-encrypted-backup?rev=da3a59137025b6a8106a72d897b53566aa2254ff#da3a59137025b6a8106a72d897b53566aa2254ff"
 dependencies = [
  "aes-gcm",
  "miniscript",
- "num_enum",
  "rand 0.9.2",
 ]
 

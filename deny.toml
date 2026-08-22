@@ -37,6 +37,7 @@ allow-git = [
     "https://github.com/ws-plaude/bwk",
     "https://github.com/wizardsardine/iced",
     "https://github.com/wizardsardine/iced_aw",
+    "https://github.com/ws-plaude/bitcoin-encrypted-backup",
 ]
 
 # Licenses are not checked here: the workspace crates carry the repository

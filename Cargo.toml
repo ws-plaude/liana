@@ -102,3 +102,5 @@ iced_program = { git = "https://github.com/wizardsardine/iced", rev = "ccf011541
 iced_debug = { git = "https://github.com/wizardsardine/iced", rev = "ccf011541eff660ed2bc6a01f9f00e150b501453" }
 # iced_aw constructs Border literals exhaustively, so it needs the same fork's Border style field.
 iced_aw = { git = "https://github.com/wizardsardine/iced_aw", rev = "488248db097769cd2269af75b5f93d5c65f45a38" }
+# Fork dropping the num_enum derives, pending a 0.0.3 release upstream.
+bitcoin-encrypted-backup = { git = "https://github.com/ws-plaude/bitcoin-encrypted-backup", rev = "da3a59137025b6a8106a72d897b53566aa2254ff" }
