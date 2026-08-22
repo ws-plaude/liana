@@ -37,6 +37,8 @@ allow-git = [
     "https://github.com/ws-plaude/bip329",
     "https://github.com/ws-plaude/bwk",
     "https://github.com/ws-plaude/iced",
+    "https://github.com/ws-plaude/winit",
+    "https://github.com/ws-plaude/softbuffer",
     "https://github.com/ws-plaude/bitcoin-encrypted-backup",
 ]
 

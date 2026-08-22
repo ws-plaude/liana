@@ -87,6 +87,12 @@ bitcoin = "0.32"
 
 # Routed to our fork for native dashed/dotted border styles.
 [patch.crates-io]
+# softbuffer logs through tracing upstream and lets tiny-xlib turn its own on;
+# this build uses the log facade the rest of the tree already has.
+softbuffer = { git = "https://github.com/ws-plaude/softbuffer", rev = "03e97b98ab5d34d1eead0775948149e19de596da" }
+# winit pulls tracing unconditionally upstream; this build puts it behind a
+# feature we do not enable.
+winit = { git = "https://github.com/ws-plaude/winit", rev = "9cd49ab8994aa178ab5b85fcf3fcc1f313f099da" }
 iced = { git = "https://github.com/ws-plaude/iced", rev = "d6cae18e2211a0109c5c979d8e86e0b208f457cd" }
 iced_core = { git = "https://github.com/ws-plaude/iced", rev = "d6cae18e2211a0109c5c979d8e86e0b208f457cd" }
 iced_runtime = { git = "https://github.com/ws-plaude/iced", rev = "d6cae18e2211a0109c5c979d8e86e0b208f457cd" }
