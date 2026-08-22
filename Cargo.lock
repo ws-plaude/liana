@@ -202,18 +202,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d965446196e3b7decd44aa7ee49e31d630118f90ef12f97900f262eb915c951d"
 
 [[package]]
-name = "bip329"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8351c1cf438ae5814ad2a696f06fd07d7be4a1a133d889b1785260fa8797798c"
-dependencies = [
- "bitcoin",
- "serde",
- "serde_json",
- "thiserror 2.0.17",
-]
-
-[[package]]
 name = "bip39"
 version = "2.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -400,6 +388,17 @@ version = "0.0.3"
 source = "git+https://github.com/ws-plaude/bwk?rev=f8ee45e2a863faf5fbf5152bc83446742bd47285#f8ee45e2a863faf5fbf5152bc83446742bd47285"
 dependencies = [
  "rand 0.9.2",
+]
+
+[[package]]
+name = "bwk-bip329"
+version = "1.0.0"
+source = "git+https://github.com/ws-plaude/bip329?rev=2d56f0b4cf1ed17acca9728df72bceda8d982826#2d56f0b4cf1ed17acca9728df72bceda8d982826"
+dependencies = [
+ "bitcoin",
+ "bwk-error",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1878,8 +1877,8 @@ dependencies = [
 name = "liana-connect"
 version = "15.0.0"
 dependencies = [
- "bip329",
  "bip39",
+ "bwk-bip329",
  "futures",
  "getrandom 0.3.1",
  "liana",
@@ -1952,7 +1951,7 @@ dependencies = [
 name = "lianad"
 version = "15.0.0"
 dependencies = [
- "bip329",
+ "bwk-bip329",
  "bwk-coin",
  "bwk-descriptor",
  "bwk-electrum",

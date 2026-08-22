@@ -395,7 +395,10 @@ impl From<DbLabel> for Label {
             DbLabelledKind::OutPoint => Label::Output(bip329::OutputRecord {
                 ref_: OutPoint::from_str(&ref_).expect(" db contains valid outpoints"),
                 label,
-                spendable: true,
+                // We do not track output spendability, and BIP329 says an
+                // importing wallet must not alter an omitted value, so leave it
+                // out rather than claim every output is spendable.
+                spendable: None,
             }),
             DbLabelledKind::Txid => Label::Transaction(bip329::TransactionRecord {
                 ref_: bitcoin::consensus::encode::deserialize_hex(&ref_)
