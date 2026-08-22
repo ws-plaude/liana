@@ -36,8 +36,7 @@ serde_json = { workspace = true }
 jsonrpc = { workspace = true, features = ["simple_http"], default-features = false }
 
 # Logging stuff
-tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
+fern = { workspace = true }
 log = { workspace = true }
 
 toml = { workspace = true }

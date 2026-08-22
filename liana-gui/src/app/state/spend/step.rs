@@ -1042,7 +1042,7 @@ impl Recipient {
                     }
                     Err(e) => {
                         // Probably the BTC amount is too large.
-                        tracing::debug!("Could not convert fiat to BTC: {e}");
+                        log::debug!("Could not convert fiat to BTC: {e}");
                         self.fiat_amount = Some(form::Value {
                             value: fiat_amt_str,
                             valid: false,

@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::Path;
-use tracing_subscriber::filter;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Config {
@@ -56,30 +55,30 @@ impl Config {
             .map_err(|e| ConfigError::WritingFile(e.to_string()))?;
 
         config_file.write_all(content.as_bytes()).map_err(|e| {
-            tracing::warn!("failed to write to file: {:?}", e);
+            log::warn!("failed to write to file: {e:?}");
             ConfigError::WritingFile(e.to_string())
         })?;
 
-        tracing::info!("Done writing gui configuration file");
+        log::info!("Done writing gui configuration file");
         Ok(())
     }
 
     /// TODO: Deserialize directly in the struct.
-    pub fn log_level(&self) -> Result<filter::LevelFilter, ConfigError> {
+    pub fn log_level(&self) -> Result<log::LevelFilter, ConfigError> {
         if let Some(level) = &self.log_level {
             match level.as_ref() {
-                "info" => Ok(filter::LevelFilter::INFO),
-                "debug" => Ok(filter::LevelFilter::DEBUG),
-                "trace" => Ok(filter::LevelFilter::TRACE),
+                "info" => Ok(log::LevelFilter::Info),
+                "debug" => Ok(log::LevelFilter::Debug),
+                "trace" => Ok(log::LevelFilter::Trace),
                 _ => Err(ConfigError::InvalidField(
                     "log_level",
                     format!("Unknown value '{level}'"),
                 )),
             }
         } else if let Some(true) = self.debug {
-            Ok(filter::LevelFilter::DEBUG)
+            Ok(log::LevelFilter::Debug)
         } else {
-            Ok(filter::LevelFilter::INFO)
+            Ok(log::LevelFilter::Info)
         }
     }
 }

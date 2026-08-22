@@ -19,10 +19,10 @@ bip39 = { workspace = true }
 getrandom = { workspace = true }
 miniscript = { workspace = true, features = ["serde"]}
 minreq = { workspace = true }
+log = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 futures = { workspace = true }
-tracing = { workspace = true }
 tungstenite = { workspace = true }
 uuid = { workspace = true , features = ["serde", "v4"]}
 

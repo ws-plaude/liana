@@ -125,7 +125,7 @@ impl Request {
         if let Some(body) = self.body {
             request = request.with_body(body?);
         }
-        tracing::debug!("Sending http request: {request:?}");
+        log::debug!("Sending http request: {request:?}");
         let (tx, rx) = oneshot::channel();
         std::thread::spawn(move || {
             let _ = tx.send(request.send());

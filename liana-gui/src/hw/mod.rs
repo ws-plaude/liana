@@ -21,8 +21,8 @@ use iced::{
     Task,
 };
 use liana::miniscript::bitcoin::{bip32::Fingerprint, hashes::hex::FromHex, Network};
+use log::{debug, warn};
 use serde::{Deserialize, Serialize};
-use tracing::{debug, warn};
 
 pub use device::AsyncDevice;
 
@@ -298,7 +298,7 @@ impl HardwareWallets {
             HardwareWalletMessage::Unlocked(id, res) => {
                 match res {
                     Err(e) => {
-                        warn!("Pairing failed with an external device {}", e);
+                        warn!("Pairing failed with an external device {e}");
                         self.list.retain(|hw| hw.id() != &id);
                     }
                     Ok(hw) => {
@@ -447,14 +447,14 @@ fn poll_devices(state: &mut State) -> HardwareWalletMessage {
                 match HardwareWallet::new(id, Arc::new(device), Some(&state.keys_aliases)) {
                     Ok(hw) => hws.push(hw),
                     Err(e) => {
-                        debug!("{}", e);
+                        debug!("{e}");
                     }
                 }
             }
         }
         Err(HWIError::DeviceNotFound) => {}
         Err(e) => {
-            debug!("{}", e);
+            debug!("{e}");
         }
     }
 
@@ -467,7 +467,7 @@ fn poll_devices(state: &mut State) -> HardwareWalletMessage {
                 } else {
                     match specter::Specter::<specter::SerialTransport>::new(port.clone()) {
                         Err(e) => {
-                            warn!("{}", e);
+                            warn!("{e}");
                         }
                         Ok(device) => {
                             if device.probe().is_ok() {
@@ -478,7 +478,7 @@ fn poll_devices(state: &mut State) -> HardwareWalletMessage {
                                 ) {
                                     Ok(hw) => hws.push(hw),
                                     Err(e) => {
-                                        debug!("{}", e);
+                                        debug!("{e}");
                                     }
                                 }
                             }
@@ -487,7 +487,7 @@ fn poll_devices(state: &mut State) -> HardwareWalletMessage {
                 }
             }
         }
-        Err(e) => warn!("Error while listing specter wallets: {}", e),
+        Err(e) => warn!("Error while listing specter wallets: {e}"),
     }
 
     match jade::SerialTransport::enumerate_potential_ports() {
@@ -499,7 +499,7 @@ fn poll_devices(state: &mut State) -> HardwareWalletMessage {
                 } else {
                     match jade::SerialTransport::new(port) {
                         Err(e) => {
-                            warn!("{:?}", e);
+                            warn!("{e:?}");
                         }
                         Ok(device) => {
                             match handle_jade_device(
@@ -513,7 +513,7 @@ fn poll_devices(state: &mut State) -> HardwareWalletMessage {
                                     hws.push(hw);
                                 }
                                 Err(e) => {
-                                    warn!("{:?}", e);
+                                    warn!("{e:?}");
                                 }
                             }
                         }
@@ -521,7 +521,7 @@ fn poll_devices(state: &mut State) -> HardwareWalletMessage {
                 }
             }
         }
-        Err(e) => warn!("Error while listing jade devices: {}", e),
+        Err(e) => warn!("Error while listing jade devices: {e}"),
     }
 
     match ledger::LedgerSimulator::try_connect() {
@@ -540,14 +540,14 @@ fn poll_devices(state: &mut State) -> HardwareWalletMessage {
                         hws.push(hw);
                     }
                     Err(e) => {
-                        warn!("{:?}", e);
+                        warn!("{e:?}");
                     }
                 }
             }
         }
         Err(HWIError::DeviceNotFound) => {}
         Err(e) => {
-            debug!("{}", e);
+            debug!("{e}");
         }
     }
 
@@ -636,7 +636,7 @@ fn poll_devices(state: &mut State) -> HardwareWalletMessage {
                                 });
                             }
                         }
-                        _ => tracing::error!("Failed to connect to coldcard"),
+                        _ => log::error!("Failed to connect to coldcard"),
                     }
                 }
             }
@@ -665,12 +665,12 @@ fn poll_devices(state: &mut State) -> HardwareWalletMessage {
                     hws.push(hw);
                 }
                 Err(e) => {
-                    warn!("{:?}", e);
+                    warn!("{e:?}");
                 }
             },
             Err(HWIError::DeviceNotFound) => {}
             Err(e) => {
-                debug!("{}", e);
+                debug!("{e}");
             }
         }
     }

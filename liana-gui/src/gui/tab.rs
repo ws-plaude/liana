@@ -1,7 +1,7 @@
 use std::{collections::HashMap, marker::PhantomData, sync::Arc, time::Instant};
 
 use iced::{Subscription, Task};
-use tracing::{error, info};
+use log::{error, info};
 extern crate serde;
 extern crate serde_json;
 
@@ -183,7 +183,7 @@ where
                         // datadir is created right before launching the installer
                         // so logs can go in <datadir_path>/installer.log
                         if let Err(e) = datadir.init() {
-                            error!("Failed to create datadir: {}", e);
+                            error!("Failed to create datadir: {e}");
                         } else {
                             info!(
                                 "Created a fresh data directory at {}",
@@ -257,12 +257,12 @@ where
                     let (app, command) = match result {
                         Some(Ok((app, command))) => (app, command),
                         Some(Err(e)) => {
-                            tracing::error!("{}", e);
+                            log::error!("{e}");
                             return Task::none();
                         }
                         None => {
                             // This should never happen - Login state only exists for LianaSettings
-                            tracing::error!("Login state reached for settings type that doesn't support remote backend");
+                            log::error!("Login state reached for settings type that doesn't support remote backend");
                             return Task::none();
                         }
                     };
@@ -422,7 +422,7 @@ where
                     command.map(|msg| Message::Run(Box::new(msg)))
                 }
                 loader::Message::App(Err(e), _) => {
-                    tracing::error!("Failed to import backup: {e}");
+                    log::error!("Failed to import backup: {e}");
                     Task::none()
                 }
 
@@ -466,10 +466,8 @@ where
                         let config = match app::Config::from_file(&config_path) {
                             Ok(c) => c,
                             Err(e) => {
-                                tracing::warn!(
-                                    "Failed to load config from {:?}, creating default: {}",
-                                    config_path,
-                                    e
+                                log::warn!(
+                                    "Failed to load config from {config_path:?}, creating default: {e}"
                                 );
                                 // Create a minimal config for remote backend (no bitcoind)
                                 app::Config::new(false)
@@ -501,7 +499,7 @@ where
                                 command.map(|msg| Message::Run(Box::new(msg)))
                             }
                             Some(Err(e)) => {
-                                tracing::error!("Failed to create app: {}", e);
+                                log::error!("Failed to create app: {e}");
                                 // Fall back to login flow
                                 let auth_cfg = crate::app::settings::AuthConfig {
                                     user_id: Some(user_id),
@@ -524,14 +522,14 @@ where
                                 command.map(|msg| Message::Login(Box::new(msg)))
                             }
                             None => {
-                                tracing::error!("Settings type doesn't support remote backend");
+                                log::error!("Settings type doesn't support remote backend");
                                 Task::none()
                             }
                         }
                     }
                     Err(e) => {
                         // Connection failed - show error in banner and let user go back to login
-                        tracing::warn!("Business connection failed, falling back to login: {}", e);
+                        log::warn!("Business connection failed, falling back to login: {e}");
                         if let State::Installer(installer) = &mut self.state {
                             installer.set_connection_error(e.to_string(), email);
                         }
@@ -602,13 +600,13 @@ pub fn create_app_with_remote_backend(
                     .find(|w| w.wallet_id() == wallet_id)
                 {
                     w.alias = wallet.metadata.wallet_alias.clone();
-                    tracing::info!("Wallet alias was changed. Settings updated.");
+                    log::info!("Wallet alias was changed. Settings updated.");
                 }
                 settings
             })
             .await
         }) {
-            tracing::error!("Failed to update wallet settings with remote alias: {}", e);
+            log::error!("Failed to update wallet settings with remote alias: {e}");
         }
     }
 
@@ -779,7 +777,7 @@ async fn connect_for_business(
     .await
     {
         // Non-fatal: the wallet still works for this session.
-        tracing::warn!("Failed to stamp Liana-Connect cache: {}", e);
+        log::warn!("Failed to stamp Liana-Connect cache: {e}");
     }
 
     // Create wallet client

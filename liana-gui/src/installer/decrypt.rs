@@ -215,7 +215,7 @@ impl DecryptModal {
                 Task::none()
             }
             Decrypt::Backup(_) => {
-                tracing::error!(
+                log::error!(
                     "DecryptModal::update(Backup), this message must have been caught early"
                 );
                 Task::none()
@@ -237,11 +237,11 @@ impl DecryptModal {
             }
             Decrypt::UnexpectedPayload(p) => match p {
                 Decrypted::Descriptor(_) => {
-                    tracing::error!("Descriptor decrypted but not a valid liana descriptor");
+                    log::error!("Descriptor decrypted but not a valid liana descriptor");
                     Task::done(Decrypt::InvalidDescriptor.into())
                 }
                 _ => {
-                    tracing::error!("Content decrypted but type not supported");
+                    log::error!("Content decrypted but type not supported");
                     Task::done(Decrypt::ContentNotSupported.into())
                 }
             },
@@ -331,7 +331,7 @@ impl DecryptModal {
                         }
                     } else {
                         // FIXME: should we retry here?
-                        tracing::error!(
+                        log::error!(
                             "Fail to fetch xpub for {} {}",
                             device.device_kind(),
                             fingerprint

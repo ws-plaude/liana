@@ -502,7 +502,7 @@ impl Response {
             Self::METHOD_ORG => match parse_org(protocol_response.payload.clone()) {
                 Ok(r) => Some(r),
                 Err(e) => {
-                    tracing::warn!(
+                    log::warn!(
                         "Failed to parse '{}' payload: {}. Payload: {:?}",
                         protocol_response.msg_type,
                         e,
@@ -514,7 +514,7 @@ impl Response {
             Self::METHOD_WALLET => match parse_wallet(protocol_response.payload.clone()) {
                 Ok(r) => Some(r),
                 Err(e) => {
-                    tracing::warn!(
+                    log::warn!(
                         "Failed to parse '{}' payload: {}. Payload: {:?}",
                         protocol_response.msg_type,
                         e,
@@ -526,7 +526,7 @@ impl Response {
             Self::METHOD_USER => match parse_user(protocol_response.payload.clone()) {
                 Ok(r) => Some(r),
                 Err(e) => {
-                    tracing::warn!(
+                    log::warn!(
                         "Failed to parse '{}' payload: {}. Payload: {:?}",
                         protocol_response.msg_type,
                         e,
@@ -539,7 +539,7 @@ impl Response {
                 match parse_delete_user_org(protocol_response.payload.clone()) {
                     Ok(r) => Some(r),
                     Err(e) => {
-                        tracing::warn!(
+                        log::warn!(
                             "Failed to parse '{}' payload: {}. Payload: {:?}",
                             protocol_response.msg_type,
                             e,
@@ -550,7 +550,7 @@ impl Response {
                 }
             }
             _ => {
-                tracing::debug!(
+                log::debug!(
                     "Ignoring unknown message type '{}'. Payload: {:?}",
                     protocol_response.msg_type,
                     protocol_response.payload

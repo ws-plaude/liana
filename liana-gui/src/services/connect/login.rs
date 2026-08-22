@@ -212,7 +212,7 @@ impl LianaLiteLogin {
                             // Whatever the error with current auth,
                             // user is redirected to do the authentication steps.
                             self.step = ConnectionStep::CheckEmail;
-                            tracing::warn!("Error while checking email: {}", e);
+                            log::warn!("Error while checking email: {e}");
                             match e {
                                 Error::CredentialsMissing => {
                                     // Liana-Connect cache does not exist,
@@ -300,7 +300,7 @@ impl LianaLiteLogin {
                         self.processing = false;
                     }
                     Err(e) => {
-                        tracing::warn!("{}", e);
+                        log::warn!("{e}");
                         self.processing = false;
                         self.connection_error = Some(e);
                     }
@@ -348,7 +348,7 @@ impl LianaLiteLogin {
                             );
                         }
                         Err(e) => {
-                            tracing::warn!("{}", e);
+                            log::warn!("{e}");
                             if let Error::Auth(AuthError { http_status, .. }) = e {
                                 if http_status == Some(403) {
                                     self.auth_error = Some("Token is expired or is invalid")
@@ -500,7 +500,7 @@ pub async fn connect(
     )
     .await
     {
-        tracing::warn!("Failed to stamp user_id on Liana-Connect cache: {}", e);
+        log::warn!("Failed to stamp user_id on Liana-Connect cache: {e}");
     }
 
     let wallets = client.list_wallets().await?;
@@ -531,7 +531,7 @@ pub async fn connect(
         )
         .await
         {
-            tracing::warn!("Failed to update settings.json after OTP: {}", e);
+            log::warn!("Failed to update settings.json after OTP: {e}");
         }
 
         let (wallet_client, wallet) = client.connect_wallet(wallet);

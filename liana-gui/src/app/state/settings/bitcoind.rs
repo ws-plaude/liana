@@ -5,7 +5,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use iced::{clipboard, Task};
-use tracing::info;
+use log::info;
 
 use liana::miniscript::bitcoin::Network;
 use lianad::config::{
@@ -578,7 +578,7 @@ impl RescanSetting {
                     match cache.network {
                         Network::Bitcoin => {
                             if date < MAINNET_GENESIS_BLOCK_TIMESTAMP {
-                                info!("Date {} prior to genesis block, using genesis block timestamp {}", date, MAINNET_GENESIS_BLOCK_TIMESTAMP);
+                                info!("Date {date} prior to genesis block, using genesis block timestamp {MAINNET_GENESIS_BLOCK_TIMESTAMP}");
 
                                 MAINNET_GENESIS_BLOCK_TIMESTAMP
                             } else {
@@ -587,7 +587,7 @@ impl RescanSetting {
                         }
                         Network::Testnet => {
                             if date < TESTNET3_GENESIS_BLOCK_TIMESTAMP {
-                                info!("Date {} prior to genesis block, using genesis block timestamp {}", date, TESTNET3_GENESIS_BLOCK_TIMESTAMP);
+                                info!("Date {date} prior to genesis block, using genesis block timestamp {TESTNET3_GENESIS_BLOCK_TIMESTAMP}");
                                 TESTNET3_GENESIS_BLOCK_TIMESTAMP
                             } else {
                                 date
@@ -595,7 +595,7 @@ impl RescanSetting {
                         }
                         Network::Testnet4 => {
                             if date < TESTNET4_GENESIS_BLOCK_TIMESTAMP {
-                                info!("Date {} prior to genesis block, using genesis block timestamp {}", date, TESTNET4_GENESIS_BLOCK_TIMESTAMP);
+                                info!("Date {date} prior to genesis block, using genesis block timestamp {TESTNET4_GENESIS_BLOCK_TIMESTAMP}");
                                 TESTNET4_GENESIS_BLOCK_TIMESTAMP
                             } else {
                                 date
@@ -603,7 +603,7 @@ impl RescanSetting {
                         }
                         Network::Signet => {
                             if date < SIGNET_GENESIS_BLOCK_TIMESTAMP {
-                                info!("Date {} prior to genesis block, using genesis block timestamp {}", date, SIGNET_GENESIS_BLOCK_TIMESTAMP);
+                                info!("Date {date} prior to genesis block, using genesis block timestamp {SIGNET_GENESIS_BLOCK_TIMESTAMP}");
                                 SIGNET_GENESIS_BLOCK_TIMESTAMP
                             } else {
                                 date
@@ -614,7 +614,7 @@ impl RescanSetting {
                         // Network is a non exhaustive enum, that is why the _.
                         _ => {
                             if date < MAINNET_GENESIS_BLOCK_TIMESTAMP {
-                                info!("Date {} prior to genesis block, using genesis block timestamp {}", date, MAINNET_GENESIS_BLOCK_TIMESTAMP);
+                                info!("Date {date} prior to genesis block, using genesis block timestamp {MAINNET_GENESIS_BLOCK_TIMESTAMP}");
                                 MAINNET_GENESIS_BLOCK_TIMESTAMP
                             } else {
                                 date
@@ -630,7 +630,7 @@ impl RescanSetting {
                     return Task::none();
                 }
                 self.processing = true;
-                info!("Asking daemon to rescan with timestamp: {}", t);
+                info!("Asking daemon to rescan with timestamp: {t}");
                 return Task::perform(
                     async move {
                         daemon.start_rescan(t.try_into().expect("t cannot be inferior to 0 otherwise genesis block timestamp is chosen"))

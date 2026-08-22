@@ -101,7 +101,7 @@ impl State for GeneralSettingsState {
         } else if self.wallet.fiat_price_setting.is_none() {
             // If the wallet does not have a fiat price setting, save the default (disabled) setting
             // to indicate that the user has seen the setting option.
-            tracing::info!(
+            log::info!(
                 "Fiat price setting is missing for wallet '{}'. Saving default setting.",
                 self.wallet.id()
             );
@@ -134,7 +134,7 @@ impl State for GeneralSettingsState {
                 if self.error.is_none()
                     && Some(&self.new_price_setting) != self.wallet.fiat_price_setting.as_ref()
                 {
-                    tracing::info!(
+                    log::info!(
                         "Saving fiat price setting for wallet '{}': {:?}",
                         self.wallet.id(),
                         self.new_price_setting

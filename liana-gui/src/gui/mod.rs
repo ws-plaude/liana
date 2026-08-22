@@ -5,9 +5,9 @@ use iced::{
     Length, Size, Subscription, Task,
 };
 use iced_runtime::window;
+use log::LevelFilter;
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
-use tracing_subscriber::filter::LevelFilter;
 extern crate serde;
 extern crate serde_json;
 
@@ -159,9 +159,9 @@ where
         (config, log_level, version): (Config, Option<LevelFilter>, &'static str),
         #[cfg(feature = "debugger")] extra_stacks: &'static [&'static debug::DebugStack],
     ) -> (GUI<I, S, M>, Task<Message<M>>) {
-        let log_level = log_level.unwrap_or(LevelFilter::INFO);
+        let log_level = log_level.unwrap_or(LevelFilter::Info);
         if let Err(e) = setup_logger(log_level, config.liana_directory.clone()) {
-            tracing::warn!("Error while setting error: {}", e);
+            log::warn!("Error while setting error: {e}");
         }
         let mut cmds = vec![window::oldest().map(Message::Window)];
         let (pane, cmd) = pane::Pane::<I, S, M>::new(&config);
@@ -277,7 +277,7 @@ where
                 if let Some(window_config) = &self.window_config {
                     let path = GlobalSettings::path(&self.config.liana_directory);
                     if let Err(e) = GlobalSettings::update_window_config(&path, window_config) {
-                        tracing::error!("Failed to update the window config: {e}");
+                        log::error!("Failed to update the window config: {e}");
                     }
                 }
                 iced::window::latest().and_then(iced::window::close)
@@ -356,7 +356,7 @@ where
                     .pending_fiat_price_request(price.source(), price.currency())
                     != Some(&price.request)
                 {
-                    tracing::debug!(
+                    log::debug!(
                         "Ignoring fiat price result for {} from {} as it is not the last request",
                         price.currency(),
                         price.source(),
@@ -365,7 +365,7 @@ where
                 }
                 match price.res.as_ref() {
                     Ok(res) => {
-                        tracing::debug!(
+                        log::debug!(
                             "Fiat price request for {} from {} completed successfully: {:?}",
                             price.currency(),
                             price.source(),
@@ -373,7 +373,7 @@ where
                         );
                     }
                     Err(e) => {
-                        tracing::error!(
+                        log::error!(
                             "Fiat price request for {} from {} returned error: {}",
                             price.currency(),
                             price.source(),
@@ -522,12 +522,12 @@ where
                     {
                         let AppMessage::Fiat(AppFiatMessage::ListCurrencies(source)) = *inner
                         else {
-                            tracing::error!("Unexpected message type after unboxing");
+                            log::error!("Unexpected message type after unboxing");
                             return Task::none();
                         };
                         // If we already have a fresh list of currencies for this source, return it directly to the tab.
                         if let Some(fresh_list) = self.global_cache.fresh_currencies(source) {
-                            tracing::debug!("Using cached currencies list for {}", source,);
+                            log::debug!("Using cached currencies list for {source}",);
                             if let Some(pane) = self.panes.get_mut(i) {
                                 return pane
                                     .update_tab_with_app_msg(
@@ -543,7 +543,7 @@ where
                                     .map(move |msg| Message::Pane(i, msg));
                             }
                         } else {
-                            tracing::debug!("Requesting list of currencies from {}", source);
+                            log::debug!("Requesting list of currencies from {source}");
                             return Task::perform(
                                 async move {
                                     let client = PriceClient::default_from_source(source);
@@ -652,11 +652,8 @@ where
                 for ((pane_id, tab_id), global_price) in need_cached {
                     if let Some(pane) = self.panes.get_mut(pane_id) {
                         // Return the cached global price to the tab.
-                        tracing::debug!(
-                            "Updating tab {} in pane {:?} with cached fiat price {:?}",
-                            tab_id,
-                            pane_id,
-                            global_price
+                        log::debug!(
+                            "Updating tab {tab_id} in pane {pane_id:?} with cached fiat price {global_price:?}"
                         );
                         tasks.push(
                             pane.update_tab_with_app_msg(

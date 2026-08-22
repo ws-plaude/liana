@@ -86,7 +86,7 @@ impl State {
         let bridge_notif_sender = notif_sender.clone();
         let bridge_waker = notif_waker.clone();
         let hw_bridge_handle = std::thread::spawn(move || {
-            tracing::debug!("HW bridge thread started");
+            log::debug!("HW bridge thread started");
             while let Ok(msg) = hw_receiver.recv() {
                 if bridge_notif_sender.send(msg).is_ok() {
                     if let Ok(guard) = bridge_waker.lock() {
@@ -96,7 +96,7 @@ impl State {
                     }
                 }
             }
-            tracing::debug!("HW bridge thread stopped (channel disconnected)");
+            log::debug!("HW bridge thread stopped (channel disconnected)");
         });
 
         // Create shared BitBox noise config for pairing persistence

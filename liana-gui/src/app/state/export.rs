@@ -239,9 +239,7 @@ impl ExportModal {
                         return Task::perform(
                             async move {
                                 if sender.send(true).await.is_err() {
-                                    tracing::error!(
-                                        "ExportModal.update(): fail to send labels NACK"
-                                    );
+                                    log::error!("ExportModal.update(): fail to send labels NACK");
                                 }
                             },
                             |_| ImportExportMessage::Ignore.into(),
@@ -250,9 +248,7 @@ impl ExportModal {
                         return Task::perform(
                             async move {
                                 if sender.send(true).await.is_err() {
-                                    tracing::error!(
-                                        "ExportModal.update(): fail to send aliases NACK"
-                                    );
+                                    log::error!("ExportModal.update(): fail to send aliases NACK");
                                 }
                             },
                             |_| ImportExportMessage::Ignore.into(),
@@ -271,9 +267,7 @@ impl ExportModal {
                         return Task::perform(
                             async move {
                                 if sender.send(false).await.is_err() {
-                                    tracing::error!(
-                                        "ExportModal.update(): fail to send labels NACK"
-                                    );
+                                    log::error!("ExportModal.update(): fail to send labels NACK");
                                 }
                             },
                             |_| ImportExportMessage::Ignore.into(),
@@ -282,9 +276,7 @@ impl ExportModal {
                         return Task::perform(
                             async move {
                                 if sender.send(false).await.is_err() {
-                                    tracing::error!(
-                                        "ExportModal.update(): fail to send aliases NACK"
-                                    );
+                                    log::error!("ExportModal.update(): fail to send aliases NACK");
                                 }
                             },
                             |_| ImportExportMessage::Ignore.into(),

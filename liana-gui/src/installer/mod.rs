@@ -17,8 +17,8 @@ use liana::{
 };
 use liana_ui::widget::Element;
 use lianad::config::{BitcoinBackend, BitcoindConfig, BitcoindRpcAuth, Config};
+use log::{error, info, warn};
 use std::{collections::HashMap, fmt::Debug, ops::Deref};
-use tracing::{error, info, warn};
 
 use std::io::Write;
 use std::path::Path;
@@ -273,7 +273,7 @@ impl LianaInstaller {
                         Task::batch(vec![task_1, task_2])
                     }
                     Err(e) => {
-                        error!("{}", e);
+                        error!("{e}");
                         Task::none()
                     }
                 }
@@ -281,7 +281,7 @@ impl LianaInstaller {
             Message::Clipboard(s) => clipboard::write(s),
             Message::OpenUrl(url) => {
                 if let Err(e) = crate::utils::open_url(&url) {
-                    tracing::error!("Error opening '{}': {}", url, e);
+                    log::error!("Error opening '{url}': {e}");
                 }
                 Task::none()
             }
@@ -840,7 +840,7 @@ pub async fn create_remote_wallet(
     {
         // this error is not critical, the liana-connect backend stored the wallet
         // and user can reauthenticate.
-        tracing::error!("Failed to update Liana-Connect cache: {}", e);
+        log::error!("Failed to update Liana-Connect cache: {e}");
     } else {
         info!("Liana-Connect cache updated");
     };
@@ -853,7 +853,7 @@ pub async fn import_remote_wallet(
     wallet_id: WalletId,
     backend: BackendWalletClient,
 ) -> Result<WalletSettings, Error> {
-    tracing::info!("Importing wallet from remote backend");
+    log::info!("Importing wallet from remote backend");
 
     if let Some(signer) = &ctx.recovered_signer {
         signer
@@ -937,7 +937,7 @@ pub async fn import_remote_wallet(
     {
         // this error is not critical, the liana-connect backend stored the wallet
         // and user can reauthenticate.
-        tracing::error!("Failed to update Liana-Connect cache: {}", e);
+        log::error!("Failed to update Liana-Connect cache: {e}");
     } else {
         info!("Liana-Connect cache updated");
     };

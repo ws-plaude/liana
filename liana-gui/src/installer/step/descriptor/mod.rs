@@ -478,7 +478,7 @@ impl Step for BackupDescriptor {
                     let bytes = match bytes {
                         Ok(b) => b,
                         Err(e) => {
-                            tracing::error!("{e:?}");
+                            log::error!("{e:?}");
                             self.error = Some(Error::Backup(e));
                             return Task::none();
                         }

@@ -253,10 +253,7 @@ impl State for ReceivePanel {
                                 )]);
                                 if let Err(e) = daemon.update_labels(&updates).await {
                                     // FIXME: should we add a retry or error mechanism here?
-                                    tracing::warn!(
-                                        "failed to store label for {}: {e}",
-                                        res.address
-                                    );
+                                    log::warn!("failed to store label for {}: {e}", res.address);
                                 }
                                 Ok((res.address, res.derivation_index))
                             },

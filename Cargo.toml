@@ -87,17 +87,17 @@ bitcoin = "0.32"
 
 # Routed to our fork for native dashed/dotted border styles.
 [patch.crates-io]
-iced = { git = "https://github.com/wizardsardine/iced", rev = "ccf011541eff660ed2bc6a01f9f00e150b501453" }
-iced_core = { git = "https://github.com/wizardsardine/iced", rev = "ccf011541eff660ed2bc6a01f9f00e150b501453" }
-iced_runtime = { git = "https://github.com/wizardsardine/iced", rev = "ccf011541eff660ed2bc6a01f9f00e150b501453" }
-iced_widget = { git = "https://github.com/wizardsardine/iced", rev = "ccf011541eff660ed2bc6a01f9f00e150b501453" }
-iced_graphics = { git = "https://github.com/wizardsardine/iced", rev = "ccf011541eff660ed2bc6a01f9f00e150b501453" }
-iced_renderer = { git = "https://github.com/wizardsardine/iced", rev = "ccf011541eff660ed2bc6a01f9f00e150b501453" }
-iced_futures = { git = "https://github.com/wizardsardine/iced", rev = "ccf011541eff660ed2bc6a01f9f00e150b501453" }
-iced_winit = { git = "https://github.com/wizardsardine/iced", rev = "ccf011541eff660ed2bc6a01f9f00e150b501453" }
-iced_wgpu = { git = "https://github.com/wizardsardine/iced", rev = "ccf011541eff660ed2bc6a01f9f00e150b501453" }
-iced_tiny_skia = { git = "https://github.com/wizardsardine/iced", rev = "ccf011541eff660ed2bc6a01f9f00e150b501453" }
-iced_program = { git = "https://github.com/wizardsardine/iced", rev = "ccf011541eff660ed2bc6a01f9f00e150b501453" }
-iced_debug = { git = "https://github.com/wizardsardine/iced", rev = "ccf011541eff660ed2bc6a01f9f00e150b501453" }
+iced = { git = "https://github.com/ws-plaude/iced", rev = "d6cae18e2211a0109c5c979d8e86e0b208f457cd" }
+iced_core = { git = "https://github.com/ws-plaude/iced", rev = "d6cae18e2211a0109c5c979d8e86e0b208f457cd" }
+iced_runtime = { git = "https://github.com/ws-plaude/iced", rev = "d6cae18e2211a0109c5c979d8e86e0b208f457cd" }
+iced_widget = { git = "https://github.com/ws-plaude/iced", rev = "d6cae18e2211a0109c5c979d8e86e0b208f457cd" }
+iced_graphics = { git = "https://github.com/ws-plaude/iced", rev = "d6cae18e2211a0109c5c979d8e86e0b208f457cd" }
+iced_renderer = { git = "https://github.com/ws-plaude/iced", rev = "d6cae18e2211a0109c5c979d8e86e0b208f457cd" }
+iced_futures = { git = "https://github.com/ws-plaude/iced", rev = "d6cae18e2211a0109c5c979d8e86e0b208f457cd" }
+iced_winit = { git = "https://github.com/ws-plaude/iced", rev = "d6cae18e2211a0109c5c979d8e86e0b208f457cd" }
+iced_wgpu = { git = "https://github.com/ws-plaude/iced", rev = "d6cae18e2211a0109c5c979d8e86e0b208f457cd" }
+iced_tiny_skia = { git = "https://github.com/ws-plaude/iced", rev = "d6cae18e2211a0109c5c979d8e86e0b208f457cd" }
+iced_program = { git = "https://github.com/ws-plaude/iced", rev = "d6cae18e2211a0109c5c979d8e86e0b208f457cd" }
+iced_debug = { git = "https://github.com/ws-plaude/iced", rev = "d6cae18e2211a0109c5c979d8e86e0b208f457cd" }
 # Fork dropping the num_enum derives, pending a 0.0.3 release upstream.
 bitcoin-encrypted-backup = { git = "https://github.com/ws-plaude/bitcoin-encrypted-backup", rev = "da3a59137025b6a8106a72d897b53566aa2254ff" }

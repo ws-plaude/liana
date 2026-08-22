@@ -148,13 +148,13 @@ pub async fn delete_wallet(
             .await
             .map_err(|e| DeleteError::Connect(e.to_string()))?
             {
-                tracing::info!("Deleting wallet on Liana-Connect {} backend", network);
+                log::info!("Deleting wallet on Liana-Connect {network} backend");
                 client
                     .delete_wallet()
                     .await
                     .map_err(|e| DeleteError::Connect(e.to_string()))?;
             } else {
-                tracing::warn!("Wallet not found on the platform");
+                log::warn!("Wallet not found on the platform");
             }
         }
     }

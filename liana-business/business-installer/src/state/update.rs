@@ -23,8 +23,8 @@ use liana_gui::{
     hw::AsyncDevice,
 };
 use liana_ui::widget::text_input;
+use log::{debug, error, trace};
 use miniscript::bitcoin::bip32::Fingerprint;
-use tracing::{debug, error, trace};
 use uuid::Uuid;
 
 fn navigate_back_target(current_view: View) -> Option<View> {
@@ -237,17 +237,17 @@ impl State {
     }
     fn on_login_send_token(&mut self) {
         let email = self.views.login.email.form.value.clone();
-        tracing::debug!(
+        log::debug!(
             "on_login_send_token: email={} valid={}",
             email,
             self.views.login.email.form.valid
         );
         if self.views.login.email.form.valid && !email.is_empty() {
-            tracing::debug!("on_login_send_token: calling auth_request");
+            log::debug!("on_login_send_token: calling auth_request");
             self.views.login.email.processing = true;
             self.backend.auth_request(email);
         } else {
-            tracing::debug!("on_login_send_token: skipped - invalid or empty");
+            log::debug!("on_login_send_token: skipped - invalid or empty");
         }
     }
     fn on_login_resend_token(&mut self) {
@@ -354,9 +354,7 @@ impl State {
         let user = match user_id {
             Some(id) => self.backend.get_user(id),
             None => {
-                tracing::error!(
-                    "BUG: State::on_org_wallet_selected() selected but user_id unknown."
-                );
+                log::error!("BUG: State::on_org_wallet_selected() selected but user_id unknown.");
                 self.on_warning_show_modal(
                     "Error",
                     "User session not found. Please log in again or contact Wizardsardine",
@@ -377,10 +375,7 @@ impl State {
 
         // Log error if user has no role in this wallet
         if user_role.is_none() {
-            tracing::error!(
-                "User has no role in wallet {}. Access may be restricted.",
-                wallet_id
-            );
+            log::error!("User has no role in wallet {wallet_id}. Access may be restricted.");
             self.on_warning_show_modal(
                 "Access Error",
                 "You do not have access to this wallet. Contact WizardSardine.",
@@ -964,7 +959,7 @@ impl State {
         let url = format!("mailto:hello@lianawallet.com?{query}");
 
         if let Err(error) = liana_gui::utils::open_url(&url) {
-            error!("Error opening '{}': {}", url, error);
+            error!("Error opening '{url}': {error}");
             self.on_warning_show_modal(
                 "Couldn't open your email app",
                 "Open your email client and contact Wizardsardine to request template edits.",
@@ -1074,7 +1069,7 @@ impl State {
     }
 
     fn on_backend_auth_code_sent(&mut self) -> Task<Msg> {
-        tracing::debug!("on_backend_auth_code_sent: transitioning to CodeEntry");
+        log::debug!("on_backend_auth_code_sent: transitioning to CodeEntry");
         self.views.login.current = views::LoginState::CodeEntry;
         // Clear any previous errors
         self.views.login.code.form.warning = None;
@@ -1131,7 +1126,7 @@ impl State {
     }
 
     fn on_backend_error(&mut self, error: Error) {
-        error!("on_backend_error: received error={:?}", error);
+        error!("on_backend_error: received error={error:?}");
 
         // Check if error occurred during cached token connection
         if self.views.login.account_select.processing {
@@ -1291,10 +1286,7 @@ impl State {
 impl State {
     /// Handle wallet notification - check for modal conflicts and refresh state
     fn on_backend_wallet(&mut self, wallet_id: Uuid) -> Task<Msg> {
-        debug!(
-            "on_backend_wallet: received wallet update for wallet_id={}",
-            wallet_id
-        );
+        debug!("on_backend_wallet: received wallet update for wallet_id={wallet_id}");
 
         // Get the updated wallet from cache first (needed to check org)
         let Some(wallet) = self.backend.get_wallet(wallet_id) else {
@@ -1417,10 +1409,7 @@ impl State {
         if self.current_view == View::Xpub {
             let email = &self.views.login.email.form.value;
             let wallet_status = wallet.effective_status(email);
-            debug!(
-                "on_backend_wallet: on Xpub view, effective status: {:?}",
-                wallet_status
-            );
+            debug!("on_backend_wallet: on Xpub view, effective status: {wallet_status:?}");
 
             match wallet_status {
                 WalletStatus::Registration => {
@@ -1765,12 +1754,12 @@ impl State {
 
                 // Log xpub fetch source info
                 debug!(
-                    source = "device",
-                    device_kind = device_info.as_ref().map(|(k, _)| k.as_str()).unwrap_or("Unknown"),
-                    device_fingerprint = %fingerprint,
-                    device_version = device_info.as_ref().and_then(|(_, v)| v.as_deref()).unwrap_or("Unknown"),
-                    derivation_path = %path,
-                    "Fetched xpub from hardware device"
+                    "Fetched xpub from hardware device: kind={}, fingerprint={fingerprint}, version={}, path={path}",
+                    device_info.as_ref().map(|(k, _)| k.as_str()).unwrap_or("Unknown"),
+                    device_info
+                        .as_ref()
+                        .and_then(|(_, v)| v.as_deref())
+                        .unwrap_or("Unknown"),
                 );
 
                 if let Some(modal) = self.views.xpub.modal_mut() {
@@ -1957,16 +1946,12 @@ impl State {
         if let Some(modal) = self.views.xpub.modal_mut() {
             match result {
                 Ok((content, filename)) => {
-                    debug!(
-                        source = "file",
-                        filename = %filename,
-                        "Loaded xpub from file"
-                    );
+                    debug!("Loaded xpub from file: {filename}");
                     modal.update_input(content);
                     modal.input_source = Some(views::XpubInputSource::File { name: filename });
                 }
                 Err(error) => {
-                    debug!(error = %error, "Failed to load xpub file");
+                    debug!("Failed to load xpub file: {error}");
                 }
             }
         }
@@ -1994,7 +1979,7 @@ impl State {
 
     /// Handle pasted xpub (sets source to Pasted)
     fn on_xpub_pasted(&mut self, xpub: String) {
-        debug!(source = "pasted", "Xpub pasted from clipboard");
+        debug!("Xpub pasted from clipboard");
         if let Some(modal) = self.views.xpub.modal_mut() {
             modal.update_input(xpub);
             modal.input_source = Some(views::XpubInputSource::Pasted);
@@ -2065,15 +2050,15 @@ impl State {
                     // Log key update with xpub source info
                     if let Some(key) = self.app.keys().get(&key_id) {
                         debug!(
-                            key_id = key_id,
-                            key_alias = %key.alias,
-                            key_identity = %key.identity,
-                            key_type = ?key.key_type,
-                            xpub_source = %xpub_data.source,
-                            xpub_device_kind = ?xpub_data.device_kind,
-                            xpub_device_version = xpub_data.device_version.as_deref().unwrap_or("N/A"),
-                            xpub_file_name = xpub_data.file_name.as_deref().unwrap_or("N/A"),
-                            "Key updated with xpub"
+                            "Key updated with xpub: id={key_id}, alias={}, identity={}, \
+                             type={:?}, source={}, device_kind={:?}, device_version={}, file={}",
+                            key.alias,
+                            key.identity,
+                            key.key_type,
+                            xpub_data.source,
+                            xpub_data.device_kind,
+                            xpub_data.device_version.as_deref().unwrap_or("N/A"),
+                            xpub_data.file_name.as_deref().unwrap_or("N/A"),
                         );
                     }
 
@@ -2088,7 +2073,7 @@ impl State {
                 }
                 Err(error) => {
                     // Validation errors are shown inline by the view
-                    debug!(error = %error, "Xpub validation failed on save");
+                    debug!("Xpub validation failed on save: {error}");
                 }
             }
         }
@@ -2145,7 +2130,7 @@ impl State {
     ) -> Task<Msg> {
         use bwk_hwi::service::SigningDevice;
 
-        debug!("on_registration_select_device: fingerprint={}", fingerprint);
+        debug!("on_registration_select_device: fingerprint={fingerprint}");
 
         // Find the device in HwiService
         let devices = self.hw.list();
@@ -2164,16 +2149,14 @@ impl State {
 
         let Some(SigningDevice::Supported(hw)) = device else {
             error!(
-                "on_registration_select_device: device not found or not supported for fingerprint={}",
-                fingerprint
+                "on_registration_select_device: device not found or not supported for fingerprint={fingerprint}"
             );
             return Task::none();
         };
 
         let device_kind = hw.kind();
         debug!(
-            "on_registration_select_device: found device kind={:?}, fingerprint={}",
-            device_kind, fingerprint
+            "on_registration_select_device: found device kind={device_kind:?}, fingerprint={fingerprint}"
         );
 
         // Open modal with device kind
@@ -2205,8 +2188,7 @@ impl State {
             .unwrap_or_else(|| "Liana".to_string());
 
         debug!(
-            "on_registration_select_device: wallet_name='{}', starting registration on {:?}",
-            wallet_name, device_kind
+            "on_registration_select_device: wallet_name='{wallet_name}', starting registration on {device_kind:?}"
         );
 
         // Clone device handle for async task
@@ -2230,10 +2212,7 @@ impl State {
                         Ok((fingerprint, hmac, wallet_name))
                     }
                     Err(e) => {
-                        error!(
-                            "register_wallet: failed for fingerprint={}, error={}",
-                            fingerprint, e
-                        );
+                        error!("register_wallet: failed for fingerprint={fingerprint}, error={e}");
                         Err(e.to_string())
                     }
                 }
@@ -2294,7 +2273,7 @@ impl State {
                 self.send_device_registered(fingerprint, hmac, registered_alias);
             }
             Err(error) => {
-                error!("on_registration_result: registration failed - {}", error);
+                error!("on_registration_result: registration failed - {error}");
                 // Show error in modal
                 self.views.registration.set_modal_error(error);
             }
@@ -2377,8 +2356,7 @@ impl State {
             let fingerprint = modal.fingerprint;
             if let RegistrationModalStep::ConfirmColdcard { hmac, wallet_name } = &modal.step {
                 debug!(
-                    "on_registration_confirm_yes: user confirmed Coldcard registration for fingerprint={}",
-                    fingerprint
+                    "on_registration_confirm_yes: user confirmed Coldcard registration for fingerprint={fingerprint}"
                 );
                 let hmac = *hmac;
                 let wallet_name = wallet_name.clone();
@@ -2397,7 +2375,7 @@ impl State {
 
     /// User skips device registration
     fn on_registration_skip(&mut self, fingerprint: Fingerprint) -> Task<Msg> {
-        debug!("on_registration_skip: user skipping device {}", fingerprint);
+        debug!("on_registration_skip: user skipping device {fingerprint}");
 
         let Some(wallet_id) = self.app.selected_wallet else {
             error!("on_registration_skip: no wallet selected");
@@ -2445,7 +2423,7 @@ impl State {
 
         // Send DeviceRegistered with registered=false for all remaining devices
         for fingerprint in &self.views.registration.user_devices {
-            debug!("on_registration_skip_all: skipping device {}", fingerprint);
+            debug!("on_registration_skip_all: skipping device {fingerprint}");
             let infos = liana_connect::ws_business::RegistrationInfos {
                 user: user_id,
                 fingerprint: *fingerprint,

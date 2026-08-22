@@ -165,7 +165,7 @@ impl DefineDescriptor {
                 if let Some(k) = key {
                     let fg = k.fingerprint;
                     if !keys.contains_key(&fg) {
-                        tracing::error!("DefineDesctriptor::keys() key {} missing", fg);
+                        log::error!("DefineDesctriptor::keys() key {fg} missing");
                     } else {
                         let entry = keys.get_mut(&fg).expect("checked");
                         entry.0.push((i, j));
@@ -258,7 +258,7 @@ impl Step for DefineDescriptor {
                     key::SelectedKey::Existing(fingerprint) => {
                         if let Some(existing_key) = self.keys.get(&fingerprint) {
                             if !self.keys.contains_key(&fingerprint) {
-                                tracing::error!("Key {fingerprint} does not exists");
+                                log::error!("Key {fingerprint} does not exists");
                                 return Task::none();
                             }
                             for coordinate in coordinates {
@@ -269,7 +269,7 @@ impl Step for DefineDescriptor {
                                     self.paths[coordinate.0].keys[coordinate.1] =
                                         Some(existing_key.clone());
                                 } else {
-                                    tracing::error!(
+                                    log::error!(
                                         "Key {fingerprint} already in path {}",
                                         coordinate.0
                                     );
@@ -277,7 +277,7 @@ impl Step for DefineDescriptor {
                             }
                             self.check_setup();
                         } else {
-                            tracing::error!("Key with fingerprint {fingerprint} does not exists");
+                            log::error!("Key with fingerprint {fingerprint} does not exists");
                         }
                         self.modal = None;
                     }
@@ -286,7 +286,7 @@ impl Step for DefineDescriptor {
                             self.accounts.insert(key.fingerprint, acc);
                         }
                         if self.keys.contains_key(&key.fingerprint) {
-                            tracing::error!("Key {} already exists", key.fingerprint);
+                            log::error!("Key {} already exists", key.fingerprint);
                         }
                         self.keys.insert(key.fingerprint, *key.clone());
                         hws.aliases.insert(key.fingerprint, key.name.clone());
@@ -294,7 +294,7 @@ impl Step for DefineDescriptor {
                             if !self.paths[coordinate.0].keys.contains(&Some(*key.clone())) {
                                 self.paths[coordinate.0].keys[coordinate.1] = Some(*key.clone());
                             } else {
-                                tracing::error!(
+                                log::error!(
                                     "Key {} already in path {}",
                                     key.fingerprint,
                                     coordinate.0

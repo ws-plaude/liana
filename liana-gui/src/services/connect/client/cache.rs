@@ -156,8 +156,8 @@ async fn open_locked_cache(
         match serde_json::from_slice::<ConnectCache>(&file_content) {
             Ok(cache) => cache,
             Err(e) => {
-                tracing::warn!("Something wrong with Liana-Connect cache file: {:?}", e);
-                tracing::warn!("Liana-Connect cache file is reset");
+                log::warn!("Something wrong with Liana-Connect cache file: {e:?}");
+                log::warn!("Liana-Connect cache file is reset");
                 ConnectCache::default()
             }
         }
@@ -180,7 +180,7 @@ async fn write_cache_back(
     })?;
 
     file.write_all(&content).map_err(|e| {
-        tracing::warn!("failed to write to file: {:?}", e);
+        log::warn!("failed to write to file: {e:?}");
         ConnectCacheError::WritingFile(e.to_string())
     })?;
 
@@ -242,9 +242,7 @@ pub async fn update_connect_cache(
             if let (true, Some(uid)) = (needs_stamp, user_id) {
                 cache.accounts[idx].user_id = Some(uid.to_string());
             } else {
-                tracing::debug!(
-                    "Liana-Connect authentication tokens are up to date, nothing to do"
-                );
+                log::debug!("Liana-Connect authentication tokens are up to date, nothing to do");
             }
             (cache.accounts[idx].tokens.clone(), needs_stamp)
         }

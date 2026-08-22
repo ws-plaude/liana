@@ -9,7 +9,7 @@ use std::time::Duration;
 use futures::{channel::mpsc, executor::block_on, SinkExt, Stream, StreamExt};
 use iced::stream::channel;
 use iced::{Alignment, Length, Subscription, Task};
-use tracing::{debug, info, warn};
+use log::{debug, info, warn};
 
 use liana::miniscript::bitcoin;
 use liana_ui::{
@@ -294,7 +294,7 @@ impl Loader {
             if daemon.backend().is_embedded() {
                 info!("Stopping internal daemon...");
                 if let Err(e) = block_on(async { daemon.stop().await }) {
-                    warn!("Internal daemon failed to stop: {}", e);
+                    warn!("Internal daemon failed to stop: {e}");
                 } else {
                     info!("Internal daemon stopped");
                 }

@@ -409,7 +409,7 @@ impl SelectKeySource {
         }
         let i = match i {
             None => {
-                tracing::error!("SelectKeySource::on_select_device(): device with fingerprint {fingerprint} not found.");
+                log::error!("SelectKeySource::on_select_device(): device with fingerprint {fingerprint} not found.");
                 return Task::none();
             }
             Some(i) => i,
@@ -768,7 +768,7 @@ impl SelectKeySource {
     fn on_update_alias(&mut self, alias: String) -> Task<Message> {
         // We do not allow editing of existing key
         if let SelectedKey::Existing(_) = self.selected_key {
-            tracing::error!(
+            log::error!(
                 "SelectKeySource::on_update_alias(): alias of existing key cannot be edited"
             );
             return Task::none();

@@ -18,12 +18,12 @@ iced = { workspace = true, default-features = false, features = ["thread-pool", 
 liana = { workspace = true }
 liana-connect = { workspace = true }
 liana-gui = { workspace = true }
+log = { workspace = true }
 liana-ui = { workspace = true }
 miniscript = { workspace = true }
 thiserror = { workspace = true }
 uuid = { workspace = true, features = ["v4"] }
 tungstenite = { workspace = true, features = ["native-tls"] }
 bwk-hwi = { workspace = true, features = ["service", "ledger", "jade", "coldcard", "bitbox", "specter"] }
-tracing = { workspace = true }
 futures = { workspace = true }
 hex = "0.4"

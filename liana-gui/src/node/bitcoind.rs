@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use std::thread;
 use std::time;
 
-use tracing::{info, warn};
+use log::{info, warn};
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -571,7 +571,7 @@ impl Bitcoind {
     pub fn stop(self) {
         match self.lock.delete() {
             Err(e) => {
-                tracing::error!("Failed to release bitcoind lock: {}", e);
+                log::error!("Failed to release bitcoind lock: {e}");
             }
             Ok(false) => {
                 info!("Other processes are using internal bitcoind. Process lock has been deleted");
@@ -584,7 +584,7 @@ impl Bitcoind {
                         info!("Stopped liana managed bitcoind");
                     }
                     Err(e) => {
-                        warn!("Could not create interface to internal bitcoind: '{}'.", e);
+                        warn!("Could not create interface to internal bitcoind: '{e}'.");
                     }
                 }
             }
@@ -664,10 +664,10 @@ pub fn delete_all_bitcoind_locks_for_process(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let locks_directory = directory.path().join(LOCK_DIRECTORY_NAME);
     if !locks_directory.exists() {
-        tracing::debug!("No internal bitcoind locks for the current process");
+        log::debug!("No internal bitcoind locks for the current process");
         return Ok(());
     }
-    tracing::info!("Deleting all internal bitcoind locks for the current process");
+    log::info!("Deleting all internal bitcoind locks for the current process");
     let process_prefix = format!("{}-", std::process::id());
     for network_dir in std::fs::read_dir(&locks_directory)? {
         let dir = network_dir?.path();

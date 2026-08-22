@@ -222,7 +222,7 @@ where
         .map_err(|e| SettingsError::WritingFile(format!("Failed to seek to start of file: {e}")))?;
 
     file.write_all(&content).map_err(|e| {
-        tracing::warn!("failed to write to file: {:?}", e);
+        log::warn!("failed to write to file: {e:?}");
         SettingsError::WritingFile(e.to_string())
     })?;
 
@@ -590,7 +590,7 @@ pub mod global {
         pub fn load_window_config(path: &PathBuf) -> Option<WindowConfig> {
             let mut ret = None;
             if let Err(e) = Self::update(path, |s| ret = s.window_config.clone(), false) {
-                tracing::error!("Failed to load window config: {e}");
+                log::error!("Failed to load window config: {e}");
             }
             ret
         }

@@ -54,12 +54,12 @@ const DUMP_LABELS_LIMIT: u32 = 100;
 macro_rules! send_progress {
     ($sender:ident, $progress:ident) => {
         if let Err(e) = $sender.unbounded_send(Progress::$progress) {
-            tracing::error!("ImportExport fail to send msg: {}", e);
+            log::error!("ImportExport fail to send msg: {}", e);
         }
     };
     ($sender:ident, $progress:ident($val:expr)) => {
         if let Err(e) = $sender.unbounded_send(Progress::$progress($val)) {
-            tracing::error!("ImportExport fail to send msg: {}", e);
+            log::error!("ImportExport fail to send msg: {}", e);
         }
     };
 }
@@ -316,7 +316,7 @@ impl Export {
             ImportExportType::FromBackup => from_backup(&sender, path).await,
         } {
             if let Err(e) = sender.unbounded_send(Progress::Error(e)) {
-                tracing::error!("Import/Export fail to send msg: {}", e);
+                log::error!("Import/Export fail to send msg: {e}");
             }
         }
     }
@@ -325,7 +325,7 @@ impl Export {
     /// GUI so it can stop the export on timeout or on user cancel.
     pub fn start(&mut self) -> Option<Abortable<impl Future<Output = ()>>> {
         let Some(sender) = self.sender.take() else {
-            tracing::error!("ExportState can start only once!");
+            log::error!("ExportState can start only once!");
             return None;
         };
         let daemon = self.daemon.clone();
@@ -349,7 +349,7 @@ pub fn export_subscription(
         let mut state = Export::new(daemon, Box::new(path), export_type);
         let Some(task) = state.start() else {
             if let Err(e) = output.send(Progress::Error(Error::HandleLost)).await {
-                tracing::error!("export_subscription() fail to send message: {}", e);
+                log::error!("export_subscription() fail to send message: {e}");
             }
             return;
         };
@@ -365,7 +365,7 @@ pub fn export_subscription(
             match progress {
                 Some(msg) => {
                     if let Err(e) = output.send(msg).await {
-                        tracing::error!("export_subscription() fail to send message: {}", e);
+                        log::error!("export_subscription() fail to send message: {e}");
                     }
                 }
                 None => break,
@@ -374,11 +374,11 @@ pub fn export_subscription(
         // Whatever the export queued on its way out is still worth reporting.
         while let Ok(Some(msg)) = state.receiver.try_next() {
             if let Err(e) = output.send(msg).await {
-                tracing::error!("export_subscription() fail to send message: {}", e);
+                log::error!("export_subscription() fail to send message: {e}");
             }
         }
         if let Err(e) = output.send(Progress::Finished).await {
-            tracing::error!("export_subscription() fail to send message: {}", e);
+            log::error!("export_subscription() fail to send message: {e}");
         }
     })
 }
@@ -1258,7 +1258,7 @@ pub async fn import_backup_at_launch(
     // import PSBTs
     for psbt in psbts {
         if let Err(e) = daemon.update_spend_tx(&psbt).await {
-            tracing::error!("Failed to restore PSBT: {e}")
+            log::error!("Failed to restore PSBT: {e}")
         }
     }
 

@@ -2,7 +2,7 @@
 
 use std::{error::Error, io::Write};
 
-use tracing::error;
+use log::error;
 extern crate serde;
 extern crate serde_json;
 
@@ -81,7 +81,7 @@ fn setup_panic_hook(liana_directory: &LianaDirectory) {
 
         error!("Panic occurred");
         if let Err(e) = delete_all_bitcoind_locks_for_process(bitcoind_dir.clone()) {
-            error!("Failed to delete internal bitcoind locks: {}", e);
+            error!("Failed to delete internal bitcoind locks: {e}");
         }
         let file = panic_info
             .location()
@@ -98,10 +98,7 @@ fn setup_panic_hook(liana_directory: &LianaDirectory) {
             .downcast_ref::<&str>()
             .map(|s| s.to_string())
             .or_else(|| panic_info.payload().downcast_ref::<String>().cloned());
-        error!(
-            "panic occurred at line {} of file {}: {:?}\n{:?}",
-            line, file, info, bt
-        );
+        error!("panic occurred at line {line} of file {file}: {info:?}\n{bt:?}");
 
         std::io::stdout().flush().expect("Flushing stdout");
         std::process::exit(1);
