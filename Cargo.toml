@@ -92,17 +92,17 @@ softbuffer = { git = "https://github.com/ws-plaude/softbuffer", rev = "03e97b98a
 # winit pulls tracing unconditionally upstream; this build puts it behind a
 # feature we do not enable.
 winit = { git = "https://github.com/ws-plaude/winit", rev = "9cd49ab8994aa178ab5b85fcf3fcc1f313f099da" }
-iced = { git = "https://github.com/ws-plaude/iced", rev = "d6cae18e2211a0109c5c979d8e86e0b208f457cd" }
-iced_core = { git = "https://github.com/ws-plaude/iced", rev = "d6cae18e2211a0109c5c979d8e86e0b208f457cd" }
-iced_runtime = { git = "https://github.com/ws-plaude/iced", rev = "d6cae18e2211a0109c5c979d8e86e0b208f457cd" }
-iced_widget = { git = "https://github.com/ws-plaude/iced", rev = "d6cae18e2211a0109c5c979d8e86e0b208f457cd" }
-iced_graphics = { git = "https://github.com/ws-plaude/iced", rev = "d6cae18e2211a0109c5c979d8e86e0b208f457cd" }
-iced_renderer = { git = "https://github.com/ws-plaude/iced", rev = "d6cae18e2211a0109c5c979d8e86e0b208f457cd" }
-iced_futures = { git = "https://github.com/ws-plaude/iced", rev = "d6cae18e2211a0109c5c979d8e86e0b208f457cd" }
-iced_winit = { git = "https://github.com/ws-plaude/iced", rev = "d6cae18e2211a0109c5c979d8e86e0b208f457cd" }
-iced_wgpu = { git = "https://github.com/ws-plaude/iced", rev = "d6cae18e2211a0109c5c979d8e86e0b208f457cd" }
-iced_tiny_skia = { git = "https://github.com/ws-plaude/iced", rev = "d6cae18e2211a0109c5c979d8e86e0b208f457cd" }
-iced_program = { git = "https://github.com/ws-plaude/iced", rev = "d6cae18e2211a0109c5c979d8e86e0b208f457cd" }
-iced_debug = { git = "https://github.com/ws-plaude/iced", rev = "d6cae18e2211a0109c5c979d8e86e0b208f457cd" }
+iced = { git = "https://github.com/ws-plaude/iced", rev = "3a4405fdd1835fe9e293032ff39d9cd71a6f5b67" }
+iced_core = { git = "https://github.com/ws-plaude/iced", rev = "3a4405fdd1835fe9e293032ff39d9cd71a6f5b67" }
+iced_runtime = { git = "https://github.com/ws-plaude/iced", rev = "3a4405fdd1835fe9e293032ff39d9cd71a6f5b67" }
+iced_widget = { git = "https://github.com/ws-plaude/iced", rev = "3a4405fdd1835fe9e293032ff39d9cd71a6f5b67" }
+iced_graphics = { git = "https://github.com/ws-plaude/iced", rev = "3a4405fdd1835fe9e293032ff39d9cd71a6f5b67" }
+iced_renderer = { git = "https://github.com/ws-plaude/iced", rev = "3a4405fdd1835fe9e293032ff39d9cd71a6f5b67" }
+iced_futures = { git = "https://github.com/ws-plaude/iced", rev = "3a4405fdd1835fe9e293032ff39d9cd71a6f5b67" }
+iced_winit = { git = "https://github.com/ws-plaude/iced", rev = "3a4405fdd1835fe9e293032ff39d9cd71a6f5b67" }
+iced_wgpu = { git = "https://github.com/ws-plaude/iced", rev = "3a4405fdd1835fe9e293032ff39d9cd71a6f5b67" }
+iced_tiny_skia = { git = "https://github.com/ws-plaude/iced", rev = "3a4405fdd1835fe9e293032ff39d9cd71a6f5b67" }
+iced_program = { git = "https://github.com/ws-plaude/iced", rev = "3a4405fdd1835fe9e293032ff39d9cd71a6f5b67" }
+iced_debug = { git = "https://github.com/ws-plaude/iced", rev = "3a4405fdd1835fe9e293032ff39d9cd71a6f5b67" }
 # Fork dropping the num_enum derives, pending a 0.0.3 release upstream.
 bitcoin-encrypted-backup = { git = "https://github.com/ws-plaude/bitcoin-encrypted-backup", rev = "da3a59137025b6a8106a72d897b53566aa2254ff" }
