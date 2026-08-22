@@ -10,6 +10,7 @@ use crate::{
 use bwk_hwi::{bitbox::NoiseConfig, service::HwiService};
 use crossbeam_channel as channel;
 use liana_connect::ws_business::{self, KeyIdentity, Wallet};
+use liana_connect::Uuid;
 use liana_gui::{app::settings::global::PersistedBitboxNoiseConfig, dir::LianaDirectory};
 use liana_ui::widget::{modal::Modal, Element};
 pub use message::{HardwareWalletRequestId, Message, Msg};
@@ -19,7 +20,6 @@ use std::{
     sync::{Arc, Mutex},
     task::Waker,
 };
-use uuid::Uuid;
 use views::keys::SignerOption;
 
 /// Shared waker for the notification stream.

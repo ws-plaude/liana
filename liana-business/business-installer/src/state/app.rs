@@ -1,7 +1,7 @@
 use liana_connect::ws_business::{Key, PolicyTemplate, SecondaryPath, SpendingPath, UserRole};
+use liana_connect::Uuid;
 use std::collections::BTreeMap;
 use std::time::{SystemTime, UNIX_EPOCH};
-use uuid::Uuid;
 
 /// Core application data
 #[derive(Debug, Clone)]

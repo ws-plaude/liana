@@ -1,6 +1,6 @@
 use liana_connect::ws_business;
+use liana_connect::Uuid;
 use liana_gui::file_picker;
-use uuid::Uuid;
 
 use crate::state::views::paths;
 

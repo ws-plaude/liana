@@ -7,6 +7,7 @@ use crate::{
 };
 use crossbeam_channel as channel;
 use futures::executor::block_on;
+use liana_connect::Uuid;
 use liana_connect::{
     http,
     ws_business::{self, Org, Request, Response, User, UserRole, Wallet},
@@ -36,7 +37,6 @@ use std::{
 #[cfg(test)]
 use tungstenite::accept;
 use tungstenite::Message as WsMessage;
-use uuid::Uuid;
 /// Default WebSocket URL for liana-business backend (mainnet)
 const DEFAULT_MAINNET_WS_URL: &str = "wss://business.lianawallet.com/ws/v1/business/wallet/create";
 /// Default WebSocket URL for liana-business backend (signet/testnet)
@@ -1965,7 +1965,7 @@ impl DummyServer {
                     // Respond with connected
                     let connected = Response::Connected {
                         version: 1,
-                        user: uuid::Uuid::nil(),
+                        user: liana_connect::Uuid::nil(),
                     };
                     let resp = connected.to_ws_message(Some(&id));
                     if ws_stream.send(resp).is_err() {

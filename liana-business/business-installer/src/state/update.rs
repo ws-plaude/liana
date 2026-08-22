@@ -18,6 +18,7 @@ use liana_connect::ws_business::{
     self, Key, KeyIdentity, PolicyTemplate, SecondaryPath, SpendingPath, Timelock, UserRole,
     Wallet, WalletStatus, BLOCKS_PER_DAY,
 };
+use liana_connect::Uuid;
 use liana_gui::{
     file_picker::{self, FilePicker, Outcome},
     hw::AsyncDevice,
@@ -25,7 +26,6 @@ use liana_gui::{
 use liana_ui::widget::text_input;
 use log::{debug, error, trace};
 use miniscript::bitcoin::bip32::Fingerprint;
-use uuid::Uuid;
 
 fn navigate_back_target(current_view: View) -> Option<View> {
     match current_view {

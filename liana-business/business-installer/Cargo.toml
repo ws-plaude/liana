@@ -22,7 +22,6 @@ log = { workspace = true }
 liana-ui = { workspace = true }
 miniscript = { workspace = true }
 thiserror = { workspace = true }
-uuid = { workspace = true, features = ["v4"] }
 tungstenite = { workspace = true, features = ["native-tls"] }
 bwk-hwi = { workspace = true, features = ["service", "ledger", "jade", "coldcard", "bitbox", "specter"] }
 futures = { workspace = true }

@@ -24,5 +24,4 @@ serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 futures = { workspace = true }
 tungstenite = { workspace = true }
-uuid = { workspace = true , features = ["serde", "v4"]}
 

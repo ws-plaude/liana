@@ -17,7 +17,7 @@ use liana_ui::{
     widget::*,
 };
 
-use uuid::Uuid;
+use liana_connect::Uuid;
 
 use super::{
     menu_entry, select_list_view, SelectListView, SelectSearch, INSTALLER_STEPS,

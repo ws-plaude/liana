@@ -4,11 +4,11 @@
 //! between Liana Connect clients and servers.
 
 use crate::ws_business::models::{Org, User, Wallet, Xpub};
+use crate::Uuid;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fmt::Display;
 pub use tungstenite::Message as WsMessage;
-use uuid::Uuid;
 
 use super::RegistrationInfos;
 
