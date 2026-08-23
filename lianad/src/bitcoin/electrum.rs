@@ -57,7 +57,6 @@ const REORG_WINDOW: u32 = 2016;
 #[derive(Debug)]
 pub enum ElectrumError {
     Address(String),
-    DomainValidation,
     Descriptor(derivator::Error),
     HeaderStore(StartError),
     Scanner(OpenError),
@@ -68,10 +67,6 @@ impl fmt::Display for ElectrumError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             ElectrumError::Address(e) => write!(f, "Invalid Electrum server address: '{e}'."),
-            ElectrumError::DomainValidation => write!(
-                f,
-                "Disabling SSL domain validation is not supported by the Electrum backend."
-            ),
             ElectrumError::Descriptor(e) => {
                 write!(f, "Descriptor not usable with the Electrum backend: '{e}'.")
             }
@@ -99,6 +94,9 @@ pub struct Electrum {
     /// The Electrum endpoint, in the form bwk's client expects.
     url: String,
     port: u16,
+    /// Carried alongside the endpoint so a broadcast opens its own connection
+    /// under the same certificate policy as the scanner's.
+    validate_certificate: bool,
     /// The genesis block, computed from the network. Also the tip we report
     /// while the header store is still empty: we know of no block beyond it.
     genesis: BlockChainTip,
@@ -122,11 +120,6 @@ impl Electrum {
         network: bitcoin::Network,
         data_dir: PathBuf,
     ) -> Result<Self, ElectrumError> {
-        // bwk always validates the server certificate against the domain. Refuse
-        // rather than silently ignore the setting.
-        if !electrum_config.validate_domain {
-            return Err(ElectrumError::DomainValidation);
-        }
         let (url, port) = endpoint(&electrum_config.addr)?;
 
         let descriptor = main_descriptor.descriptor().clone();
@@ -140,6 +133,7 @@ impl Electrum {
             electrum_url: Some(url.clone()),
             electrum_port: Some(port),
             offline: None,
+            validate_certificate: Some(electrum_config.validate_domain),
             network,
             look_ahead: LOOK_AHEAD,
             descriptor,
@@ -157,6 +151,7 @@ impl Electrum {
             network,
             Some(config.headers_path()),
             Some(0),
+            config.validate_certificate(),
         )
         .map_err(ElectrumError::HeaderStore)?;
 
@@ -172,6 +167,7 @@ impl Electrum {
             notifications,
             url,
             port,
+            validate_certificate: electrum_config.validate_domain,
             genesis: BlockChainTip {
                 hash: genesis.block_hash(),
                 height: 0,
@@ -396,7 +392,8 @@ impl Electrum {
     }
 
     pub fn broadcast_tx(&self, tx: &bitcoin::Transaction) -> Result<(), String> {
-        let mut client = client::Client::new(&self.url, self.port).map_err(|e| e.to_string())?;
+        let mut client = client::Client::new(&self.url, self.port, self.validate_certificate)
+            .map_err(|e| e.to_string())?;
         client.broadcast(tx).map_err(|e| e.to_string())?;
         // Show the spend right away instead of waiting for the server to tell us
         // about a transaction we just sent it ourselves.
@@ -478,21 +475,17 @@ impl Electrum {
     }
 
     /// Make sure bwk watches at least up to the derivation indices lianad has
-    /// handed out. Its receive tip only moves through `new_addr`; its change tip
-    /// only moves when a change coin lands, so change relies on the look-ahead.
+    /// handed out. Neither tip moves on its own past what bwk has seen on
+    /// chain, so both are walked up to the index lianad has issued; otherwise a
+    /// coin landing beyond the look-ahead would go unseen.
     fn widen_watch_window(&mut self, receive_index: ChildNumber, change_index: ChildNumber) {
         let receive_index: u32 = receive_index.into();
         while self.scanner.recv_watch_tip() < receive_index {
             self.scanner.new_addr();
         }
         let change_index: u32 = change_index.into();
-        let change_watch_tip = self.scanner.change_watch_tip();
-        if change_watch_tip < change_index {
-            log::warn!(
-                "Change addresses are watched up to index {change_watch_tip} but index \
-                 {change_index} has been handed out. Coins on the addresses in between would not \
-                 be seen."
-            );
+        while self.scanner.change_watch_tip() < change_index {
+            self.scanner.new_change_addr();
         }
     }
 

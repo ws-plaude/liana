@@ -80,12 +80,8 @@ impl DefineElectrum {
             ElectrumScheme::Tcp => host,
         };
         // Creating the client connects, which is what we are checking here.
-        if self.validate_domain {
-            Client::new(&addr, port)
-        } else {
-            Client::new_local(&addr, port)
-        }
-        .map_err(|e| Error::Electrum(e.to_string()))?;
+        Client::new(&addr, port, self.validate_domain)
+            .map_err(|e| Error::Electrum(e.to_string()))?;
         Ok(())
     }
 }

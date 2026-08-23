@@ -45,14 +45,14 @@ rusqlite = "0.33"
 # Electrum backend: validated block headers and merkle proofs for transaction
 # inclusion. lianad takes the scanner alone; the wallet half of bwk (signers,
 # transaction building) is not in its graph.
-bwk-electrum = { git = "https://github.com/ws-plaude/bwk", rev = "f8ee45e2a863faf5fbf5152bc83446742bd47285" }
-bwk-coin = { git = "https://github.com/ws-plaude/bwk", rev = "f8ee45e2a863faf5fbf5152bc83446742bd47285" }
-bwk-descriptor = { git = "https://github.com/ws-plaude/bwk", rev = "f8ee45e2a863faf5fbf5152bc83446742bd47285" }
+bwk-electrum = { git = "https://github.com/ws-plaude/bwk", rev = "bbd4c9eaa5cca75f7d88419b04e8b8117f09fa1a" }
+bwk-coin = { git = "https://github.com/ws-plaude/bwk", rev = "bbd4c9eaa5cca75f7d88419b04e8b8117f09fa1a" }
+bwk-descriptor = { git = "https://github.com/ws-plaude/bwk", rev = "bbd4c9eaa5cca75f7d88419b04e8b8117f09fa1a" }
 # Without `sqlite`: lianad opens bwk's stores as JSON and keeps its own wallet
 # data in its own database, so bwk's SQLite backend is never reached. Leaving it
 # on would put a second rusqlite requirement in the graph and pin our version to
 # whatever bwk links.
-bwk-persist = { git = "https://github.com/ws-plaude/bwk", rev = "f8ee45e2a863faf5fbf5152bc83446742bd47285", default-features = false }
+bwk-persist = { git = "https://github.com/ws-plaude/bwk", rev = "bbd4c9eaa5cca75f7d88419b04e8b8117f09fa1a", default-features = false }
 
 # liana-connect WebSocket protocol
 uuid = "1.19.0"
@@ -67,7 +67,7 @@ getrandom = "0.3.1"
 bip39 = "2.0"
 fern = "0.6"
 bip329 = { package = "bwk-bip329", git = "https://github.com/ws-plaude/bip329", rev = "2d56f0b4cf1ed17acca9728df72bceda8d982826", default-features = false }
-bwk-hwi = { git = "https://github.com/ws-plaude/bwk", rev = "f8ee45e2a863faf5fbf5152bc83446742bd47285", default-features = false, features = ["ledger", "specter", "coldcard", "bitbox", "jade", "minreq", "service"] }
+bwk-hwi = { git = "https://github.com/ws-plaude/bwk", rev = "bbd4c9eaa5cca75f7d88419b04e8b8117f09fa1a", default-features = false, features = ["ledger", "specter", "coldcard", "bitbox", "jade", "minreq", "service"] }
 hex = "0.4.3"
 futures = "0.3"
 tracing = "0.1.37"
