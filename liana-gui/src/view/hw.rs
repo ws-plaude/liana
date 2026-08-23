@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use async_hwi::{DeviceKind, Version};
+use bwk_hwi::{DeviceKind, Version};
 use liana::{descriptors::LianaDescriptor, miniscript::bitcoin::bip32::Fingerprint};
 use liana_ui::{
     component::list::{self, DeviceStatus},

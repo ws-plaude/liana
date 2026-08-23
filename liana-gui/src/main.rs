@@ -2,7 +2,7 @@
 
 use std::{error::Error, io::Write};
 
-use tracing::error;
+use log::error;
 extern crate serde;
 extern crate serde_json;
 
@@ -63,7 +63,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     .window(window_settings)
     .run()
     {
-        log::error!("{}", e);
+        log::error!("{e}");
         Err(format!("Failed to launch UI: {e}").into())
     } else {
         Ok(())
@@ -73,10 +73,15 @@ fn main() -> Result<(), Box<dyn Error>> {
 // A panic in any thread should stop the main thread, and print the panic.
 fn setup_panic_hook(liana_directory: &LianaDirectory) {
     let bitcoind_dir = liana_directory.bitcoind_directory();
+    // Chained rather than replaced: the default hook is what prints the panic
+    // to stderr, and the logger below only exists once the GUI has started.
+    let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |panic_info| {
+        default_hook(panic_info);
+
         error!("Panic occurred");
         if let Err(e) = delete_all_bitcoind_locks_for_process(bitcoind_dir.clone()) {
-            error!("Failed to delete internal bitcoind locks: {}", e);
+            error!("Failed to delete internal bitcoind locks: {e}");
         }
         let file = panic_info
             .location()
@@ -87,16 +92,13 @@ fn setup_panic_hook(liana_directory: &LianaDirectory) {
             .map(|l| l.line().to_string())
             .unwrap_or_else(|| "'unknown'".to_string());
 
-        let bt = backtrace::Backtrace::new();
+        let bt = std::backtrace::Backtrace::force_capture();
         let info = panic_info
             .payload()
             .downcast_ref::<&str>()
             .map(|s| s.to_string())
             .or_else(|| panic_info.payload().downcast_ref::<String>().cloned());
-        error!(
-            "panic occurred at line {} of file {}: {:?}\n{:?}",
-            line, file, info, bt
-        );
+        error!("panic occurred at line {line} of file {file}: {info:?}\n{bt:?}");
 
         std::io::stdout().flush().expect("Flushing stdout");
         std::process::exit(1);

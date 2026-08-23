@@ -5,8 +5,13 @@ use crate::{
     backend::{Backend, Error, Notification},
     state::Message,
 };
-use crossbeam::channel;
-use liana_connect::ws_business::{self, Org, Request, Response, User, UserRole, Wallet};
+use crossbeam_channel as channel;
+use futures::executor::block_on;
+use liana_connect::Uuid;
+use liana_connect::{
+    http,
+    ws_business::{self, Org, Request, Response, User, UserRole, Wallet},
+};
 use liana_gui::{
     dir::{LianaDirectory, NetworkDirectory},
     services::connect::client::{
@@ -15,7 +20,9 @@ use liana_gui::{
         BackendType, ServiceConfig, ServiceConfigResource, BUSINESS_MAINNET_API_URL,
         BUSINESS_SIGNET_API_URL,
     },
+    utils::now,
 };
+use log::error;
 use miniscript::bitcoin::Network;
 use std::{
     collections::BTreeMap,
@@ -27,11 +34,9 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
-use tracing::error;
 #[cfg(test)]
 use tungstenite::accept;
 use tungstenite::Message as WsMessage;
-use uuid::Uuid;
 /// Default WebSocket URL for liana-business backend (mainnet)
 const DEFAULT_MAINNET_WS_URL: &str = "wss://business.lianawallet.com/ws/v1/business/wallet/create";
 /// Default WebSocket URL for liana-business backend (signet/testnet)
@@ -71,18 +76,17 @@ pub fn ws_url(network: Network) -> String {
 pub const PROTOCOL_VERSION: u8 = 1;
 
 /// Get service configuration for the business server (blocking)
-fn get_service_config_blocking(network: Network) -> Result<ServiceConfig, reqwest::Error> {
-    use tracing::debug;
+fn get_service_config_blocking(network: Network) -> Result<ServiceConfig, minreq::Error> {
+    use log::debug;
 
     let api_url = auth_api_url(network);
-    let client = reqwest::blocking::Client::new();
     let url = format!("{api_url}/v1/desktop");
 
-    debug!("get_service_config_blocking: fetching from {}", url);
-    let response = client.get(&url).send()?;
+    debug!("get_service_config_blocking: fetching from {url}");
+    let response = minreq::get(&url).with_timeout(http::TIMEOUT_SECS).send()?;
     debug!(
         "get_service_config_blocking: response status={}",
-        response.status()
+        response.status_code
     );
 
     let res: ServiceConfigResource = response.json()?;
@@ -188,23 +192,23 @@ impl Client {
         notif_waker: &SharedWaker,
         msg: Message,
     ) {
-        tracing::debug!("send_notif: sending {:?}", msg);
+        log::debug!("send_notif: sending {msg:?}");
         match notif_sender.send(msg) {
             Ok(()) => {
-                tracing::debug!("send_notif: sent to channel successfully");
+                log::debug!("send_notif: sent to channel successfully");
                 if let Ok(guard) = notif_waker.lock() {
                     if let Some(waker) = guard.as_ref() {
-                        tracing::debug!("send_notif: waking stream");
+                        log::debug!("send_notif: waking stream");
                         waker.wake_by_ref();
                     } else {
-                        tracing::debug!("send_notif: no waker available");
+                        log::debug!("send_notif: no waker available");
                     }
                 } else {
-                    tracing::debug!("send_notif: failed to lock waker");
+                    log::debug!("send_notif: failed to lock waker");
                 }
             }
             Err(e) => {
-                tracing::debug!("send_notif: failed to send: {:?}", e);
+                log::debug!("send_notif: failed to send: {e:?}");
             }
         }
     }
@@ -239,7 +243,7 @@ impl Client {
                 // Sleep for 60 seconds, checking stop flag periodically
                 for _ in 0..60 {
                     if stop_flag.load(Ordering::Relaxed) {
-                        tracing::debug!("Token refresh thread stopping");
+                        log::debug!("Token refresh thread stopping");
                         return;
                     }
                     thread::sleep(std::time::Duration::from_secs(1));
@@ -253,7 +257,7 @@ impl Client {
                     };
 
                     let tokens = &account.tokens;
-                    let now = chrono::Utc::now().timestamp();
+                    let now = now().as_secs() as i64;
 
                     // Refresh if token expires within 5 minutes (300 seconds)
                     const REFRESH_THRESHOLD_SECS: i64 = 300;
@@ -262,7 +266,7 @@ impl Client {
                         return false; // No refresh needed
                     }
 
-                    tracing::debug!(
+                    log::debug!(
                         "Token expires in {} seconds, refreshing proactively",
                         tokens.expires_at - now
                     );
@@ -293,24 +297,24 @@ impl Client {
                                 *token_guard = Some(final_tokens.access_token);
                             }
 
-                            tracing::info!("Token refreshed successfully");
+                            log::info!("Token refreshed successfully");
                             true
                         }
                         Err(e) => {
-                            tracing::warn!("Failed to refresh token: {:?}", e);
+                            log::warn!("Failed to refresh token: {e:?}");
                             false
                         }
                     }
                 });
 
                 if !result {
-                    tracing::trace!("Token refresh check: no refresh needed");
+                    log::trace!("Token refresh check: no refresh needed");
                 }
             }
         });
 
         self.refresh_thread_handle = Some(handle);
-        tracing::debug!("Token refresh thread started");
+        log::debug!("Token refresh thread started");
     }
 
     /// Stop the background token refresh thread.
@@ -331,12 +335,12 @@ impl Client {
     ) -> (Vec<crate::state::views::login::CachedAccount>, Vec<String>) {
         use crate::state::views::login::CachedAccount;
 
-        tracing::debug!("validate_all_cached_tokens: starting validation");
+        log::debug!("validate_all_cached_tokens: starting validation");
 
         let network_dir = match &self.network_dir {
             Some(nd) => nd.clone(),
             None => {
-                tracing::debug!("validate_all_cached_tokens: no network_dir configured");
+                log::debug!("validate_all_cached_tokens: no network_dir configured");
                 return (vec![], vec![]);
             }
         };
@@ -344,17 +348,17 @@ impl Client {
         let cache = match ConnectCache::from_file(&network_dir) {
             Ok(c) => c,
             Err(e) => {
-                tracing::debug!("validate_all_cached_tokens: failed to read cache: {:?}", e);
+                log::debug!("validate_all_cached_tokens: failed to read cache: {e:?}");
                 return (vec![], vec![]);
             }
         };
 
         if cache.accounts.is_empty() {
-            tracing::debug!("validate_all_cached_tokens: no cached accounts");
+            log::debug!("validate_all_cached_tokens: no cached accounts");
             return (vec![], vec![]);
         }
 
-        tracing::debug!(
+        log::debug!(
             "validate_all_cached_tokens: validating {} accounts",
             cache.accounts.len()
         );
@@ -363,18 +367,16 @@ impl Client {
         let mut valid = vec![];
         let mut to_remove = vec![];
 
-        // Fetch config BEFORE entering async context
-        // (reqwest::blocking cannot be used inside tokio runtime)
+        // Fetch config BEFORE entering async context, the call is blocking.
         let config = get_service_config_blocking(network).ok();
 
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(async {
+        block_on(async {
             for account in cache.accounts {
-                let now = chrono::Utc::now().timestamp();
+                let now = now().as_secs() as i64;
 
                 if account.tokens.expires_at > now + 60 {
                     // Token still valid
-                    tracing::debug!(
+                    log::debug!(
                         "validate_all_cached_tokens: token valid for email={}",
                         account.email
                     );
@@ -384,14 +386,14 @@ impl Client {
                     });
                 } else {
                     // Token expired, try to refresh
-                    tracing::debug!(
+                    log::debug!(
                         "validate_all_cached_tokens: token expired for email={}, attempting refresh",
                         account.email
                     );
                     let config = match &config {
                         Some(cfg) => cfg,
                         None => {
-                            tracing::warn!(
+                            log::warn!(
                                 "validate_all_cached_tokens: no config available, removing account email={}",
                                 account.email
                             );
@@ -412,7 +414,7 @@ impl Client {
                         .await
                     {
                         Ok(new_tokens) => {
-                            tracing::debug!(
+                            log::debug!(
                                 "validate_all_cached_tokens: token refreshed for email={}",
                                 account.email
                             );
@@ -435,7 +437,7 @@ impl Client {
                             });
                         }
                         Err(e) => {
-                            tracing::warn!(
+                            log::warn!(
                                 "validate_all_cached_tokens: token refresh failed for email={}: {:?}",
                                 account.email,
                                 e
@@ -447,7 +449,7 @@ impl Client {
             }
         });
 
-        tracing::debug!(
+        log::debug!(
             "validate_all_cached_tokens: completed, valid={} to_remove={}",
             valid.len(),
             to_remove.len()
@@ -462,7 +464,7 @@ impl Client {
             return;
         }
 
-        tracing::debug!(
+        log::debug!(
             "clear_invalid_tokens: removing {} invalid tokens",
             emails_to_remove.len()
         );
@@ -470,7 +472,7 @@ impl Client {
         let network_dir = match &self.network_dir {
             Some(nd) => nd.clone(),
             None => {
-                tracing::debug!("clear_invalid_tokens: no network_dir configured");
+                log::debug!("clear_invalid_tokens: no network_dir configured");
                 return;
             }
         };
@@ -485,7 +487,7 @@ impl Client {
             let cache = match ConnectCache::from_file(&network_dir) {
                 Ok(cache) => cache,
                 Err(e) => {
-                    tracing::debug!("clear_invalid_tokens: failed to read cache: {:?}", e);
+                    log::debug!("clear_invalid_tokens: failed to read cache: {e:?}");
                     return;
                 }
             };
@@ -507,46 +509,45 @@ impl Client {
             (user_ids, legacy)
         };
 
-        tracing::debug!(
+        log::debug!(
             "clear_invalid_tokens: keeping {} migrated and {} legacy accounts",
             valid_user_ids.len(),
             valid_legacy_emails.len()
         );
 
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(async {
+        block_on(async {
             let _ = filter_connect_cache(&network_dir, &valid_user_ids, &valid_legacy_emails).await;
         });
 
-        tracing::debug!("clear_invalid_tokens: cache updated");
+        log::debug!("clear_invalid_tokens: cache updated");
     }
 
     /// Logout: clear token, close connection, remove auth cache, and clear data caches
     pub fn logout(&mut self) {
-        tracing::info!("logout: logging out user");
+        log::info!("logout: logging out user");
 
         // Stop token refresh thread
-        tracing::debug!("logout: stopping token refresh thread");
+        log::debug!("logout: stopping token refresh thread");
         self.stop_token_refresh_thread();
 
         // Clear token from memory
-        tracing::debug!("logout: clearing token from memory");
+        log::debug!("logout: clearing token from memory");
         if let Ok(mut token_guard) = self.token.lock() {
             *token_guard = None;
         }
 
         // Clear auth client
-        tracing::debug!("logout: clearing auth client");
+        log::debug!("logout: clearing auth client");
         if let Ok(mut auth_client_guard) = self.auth_client.lock() {
             *auth_client_guard = None;
         }
 
         // Close WebSocket connection
-        tracing::debug!("logout: closing WebSocket connection");
+        log::debug!("logout: closing WebSocket connection");
         self.close();
 
         // Clear org/wallet/user caches
-        tracing::debug!("logout: clearing data caches");
+        log::debug!("logout: clearing data caches");
         if let Ok(mut orgs) = self.orgs.lock() {
             orgs.clear();
         }
@@ -560,7 +561,7 @@ impl Client {
         // Clear email
         self.email = None;
 
-        tracing::info!("logout: logout complete");
+        log::info!("logout: logout complete");
     }
 }
 
@@ -577,12 +578,12 @@ pub struct TokenRetrievalData {
 /// Try to get a cached token, refreshing it if expired.
 // NOTE: this function is blocking
 fn try_get_cached_token(data: &TokenRetrievalData) -> Option<String> {
-    tracing::debug!("try_get_cached_token: checking for existing token");
+    log::debug!("try_get_cached_token: checking for existing token");
 
     // First check if we already have a token
     if let Ok(token_guard) = data.token.lock() {
         if let Some(t) = token_guard.as_ref() {
-            tracing::debug!("try_get_cached_token: token already in memory");
+            log::debug!("try_get_cached_token: token already in memory");
             return Some(t.clone());
         }
     }
@@ -591,7 +592,7 @@ fn try_get_cached_token(data: &TokenRetrievalData) -> Option<String> {
     let (network_dir, email) = match (data.network_dir.clone(), data.email.clone()) {
         (Some(nd), Some(e)) => (nd, e),
         _ => {
-            tracing::debug!("try_get_cached_token: missing network_dir or email");
+            log::debug!("try_get_cached_token: missing network_dir or email");
             return None;
         }
     };
@@ -621,35 +622,33 @@ fn try_get_cached_token(data: &TokenRetrievalData) -> Option<String> {
 
     let auth_client_for_refresh = existing_auth_client.or(fallback_auth_client);
 
-    tracing::debug!("try_get_cached_token: checking cache for email={}", email);
+    log::debug!("try_get_cached_token: checking cache for email={email}");
 
     let result = futures::executor::block_on(async {
         // Try to get cached account
         match Account::from_cache_by_email(&network_dir, &email) {
             Ok(Some(account)) => {
                 let tokens = &account.tokens;
-                let now = chrono::Utc::now().timestamp();
+                let now = now().as_secs() as i64;
 
                 // Check if token is expired (with some buffer time)
                 if tokens.expires_at > now + 60 {
                     // Token is still valid
-                    tracing::debug!(
+                    log::debug!(
                         "try_get_cached_token: token valid, expires in {} seconds",
                         tokens.expires_at - now
                     );
                     Ok(tokens.access_token.clone())
                 } else {
                     // Token expired, try to refresh
-                    tracing::debug!(
+                    log::debug!(
                         "try_get_cached_token: token expired {} seconds ago, attempting refresh",
                         now - tokens.expires_at
                     );
                     if let Some(client) = auth_client_for_refresh {
                         match client.refresh_token(&tokens.refresh_token).await {
                             Ok(new_tokens) => {
-                                tracing::debug!(
-                                    "try_get_cached_token: token refreshed successfully"
-                                );
+                                log::debug!("try_get_cached_token: token refreshed successfully");
                                 // Update cache
                                 match update_connect_cache(
                                     &network_dir,
@@ -665,28 +664,23 @@ fn try_get_cached_token(data: &TokenRetrievalData) -> Option<String> {
                                 }
                             }
                             Err(e) => {
-                                tracing::warn!(
-                                    "try_get_cached_token: token refresh failed: {:?}",
-                                    e
-                                );
+                                log::warn!("try_get_cached_token: token refresh failed: {e:?}");
                                 Err(())
                             }
                         }
                     } else {
                         // No auth client, can't refresh
-                        tracing::debug!(
-                            "try_get_cached_token: no auth client available for refresh"
-                        );
+                        log::debug!("try_get_cached_token: no auth client available for refresh");
                         Err(())
                     }
                 }
             }
             Ok(None) => {
-                tracing::debug!("try_get_cached_token: no cached account found");
+                log::debug!("try_get_cached_token: no cached account found");
                 Err(())
             }
             Err(e) => {
-                tracing::debug!("try_get_cached_token: error reading cache: {:?}", e);
+                log::debug!("try_get_cached_token: error reading cache: {e:?}");
                 Err(())
             }
         }
@@ -717,10 +711,10 @@ fn ping_thread(
         .name("ping".into())
         .stack_size(POLLING_THREAD_STACK_SIZE)
         .spawn(move || {
-            tracing::debug!("ping_thread: started");
+            log::debug!("ping_thread: started");
 
             // Send first ping immediately after connection
-            tracing::debug!("ping_thread: sending initial ping");
+            log::debug!("ping_thread: sending initial ping");
             let _ = request_sender.send(Request::Ping);
             {
                 let mut ping_time = last_ping.lock().expect("poisoned");
@@ -730,11 +724,11 @@ fn ping_thread(
             loop {
                 thread::sleep(Duration::from_secs(60));
                 if !connected.load(Ordering::Relaxed) {
-                    tracing::debug!("ping_thread: connection closed, stopping");
+                    log::debug!("ping_thread: connection closed, stopping");
                     break;
                 }
                 // Send ping
-                tracing::debug!("ping_thread: sending ping");
+                log::debug!("ping_thread: sending ping");
                 let _ = request_sender.send(Request::Ping);
                 // Record ping time
                 {
@@ -756,12 +750,12 @@ fn ping_timeout_checker_thread(
         .name("ping-timeout".into())
         .stack_size(POLLING_THREAD_STACK_SIZE)
         .spawn(move || {
-            tracing::debug!("ping_timeout_checker_thread: started");
+            log::debug!("ping_timeout_checker_thread: started");
 
             loop {
                 thread::sleep(Duration::from_secs(1));
                 if !connected.load(Ordering::Relaxed) {
-                    tracing::debug!("ping_timeout_checker_thread: connection closed, stopping");
+                    log::debug!("ping_timeout_checker_thread: connection closed, stopping");
                     break;
                 }
                 let should_disconnect = {
@@ -774,7 +768,7 @@ fn ping_timeout_checker_thread(
                     }
                 };
                 if should_disconnect {
-                    tracing::warn!(
+                    log::warn!(
                         "ping_timeout_checker_thread: ping timeout (30s without pong), disconnecting"
                     );
                     connected.store(false, Ordering::Relaxed);
@@ -816,7 +810,7 @@ fn request_timeout_checker_thread(
                 for (id, request, count) in stale {
                     if count >= 3 {
                         // Max retries exceeded - abort
-                        tracing::error!("Request {:?} timed out after 3 retries, aborting", id);
+                        log::error!("Request {id:?} timed out after 3 retries, aborting");
                         {
                             let mut requests = sent_requests.lock().expect("poisoned");
                             requests.remove(&id);
@@ -828,7 +822,7 @@ fn request_timeout_checker_thread(
                         );
                     } else {
                         // Retry
-                        tracing::warn!(
+                        log::warn!(
                             "Re-sending timed out request {:?} (attempt {})",
                             id,
                             count + 1
@@ -864,16 +858,16 @@ fn wss_thread(
     notif_waker: SharedWaker,
     connected: Arc<AtomicBool>,
 ) {
-    tracing::debug!("wss_thread: starting, url={}", url);
+    log::debug!("wss_thread: starting, url={url}");
 
     // Get token (this may involve network calls to refresh, but we're in a background thread)
     let token = match try_get_cached_token(&token_data) {
         Some(t) => {
-            tracing::debug!("wss_thread: token retrieved successfully");
+            log::debug!("wss_thread: token retrieved successfully");
             t
         }
         None => {
-            tracing::error!("wss_thread: failed to get token");
+            log::error!("wss_thread: failed to get token");
             Client::send_notif(
                 &notif_sender,
                 &notif_waker,
@@ -889,18 +883,15 @@ fn wss_thread(
         format!("wss://{url}")
     };
 
-    tracing::debug!("wss_thread: connecting to {}", url);
-
-    // Install ring crypto provider for rustls (required by tungstenite TLS)
-    let _ = rustls::crypto::ring::default_provider().install_default();
+    log::debug!("wss_thread: connecting to {url}");
 
     let (mut ws_stream, _) = match tungstenite::connect(&url) {
         Ok(stream) => {
-            tracing::debug!("wss_thread: WebSocket connection established");
+            log::debug!("wss_thread: WebSocket connection established");
             stream
         }
         Err(e) => {
-            tracing::error!("wss_thread: WebSocket connection failed: {:?}", e);
+            log::error!("wss_thread: WebSocket connection failed: {e:?}");
             Client::send_notif(
                 &notif_sender,
                 &notif_waker,
@@ -911,13 +902,10 @@ fn wss_thread(
     };
 
     // Send connect message
-    tracing::debug!(
-        "wss_thread: sending connect message with version={}",
-        version
-    );
+    log::debug!("wss_thread: sending connect message with version={version}");
     let (msg, _id) = Request::Connect { version }.to_ws_message(&token);
     if ws_stream.send(msg).is_err() {
-        tracing::error!("wss_thread: failed to send connect message");
+        log::error!("wss_thread: failed to send connect message");
         Client::send_notif(
             &notif_sender,
             &notif_waker,
@@ -931,18 +919,18 @@ fn wss_thread(
         tungstenite::stream::MaybeTlsStream::Plain(s) => {
             let _ = s.set_read_timeout(Some(Duration::from_secs(30)));
         }
-        tungstenite::stream::MaybeTlsStream::Rustls(s) => {
+        tungstenite::stream::MaybeTlsStream::NativeTls(s) => {
             let _ = s.get_ref().set_read_timeout(Some(Duration::from_secs(30)));
         }
         _ => {}
     }
 
     // we expect the server to ACK the connection w/ a Response::Connected
-    tracing::debug!("wss_thread: waiting for Connected response");
+    log::debug!("wss_thread: waiting for Connected response");
     if let Ok(msg) = ws_stream.read() {
         match Response::from_ws_message(msg) {
             Ok((Some(Response::Connected { user, .. }), _)) => {
-                tracing::info!("wss_thread: connected successfully, user_id={}", user);
+                log::info!("wss_thread: connected successfully, user_id={user}");
                 // Store the authenticated user's ID
                 if let Ok(mut id) = user_id.lock() {
                     *id = Some(user);
@@ -954,10 +942,7 @@ fn wss_thread(
             }
             Ok((Some(response), _)) => {
                 // NOTE: Handshake fails if we receive anything other than Response::Connected
-                tracing::error!(
-                    "wss_thread: handshake failed, expected Connected, got {:?}",
-                    response
-                );
+                log::error!("wss_thread: handshake failed, expected Connected, got {response:?}");
                 Client::send_notif(
                     &notif_sender,
                     &notif_waker,
@@ -966,7 +951,7 @@ fn wss_thread(
                 return;
             }
             Ok((None, _)) => {
-                tracing::error!("wss_thread: handshake failed, unknown message from server");
+                log::error!("wss_thread: handshake failed, unknown message from server");
                 Client::send_notif(
                     &notif_sender,
                     &notif_waker,
@@ -975,7 +960,7 @@ fn wss_thread(
                 return;
             }
             Err(e) => {
-                tracing::error!("wss_thread: handshake failed, parse error: {:?}", e);
+                log::error!("wss_thread: handshake failed, parse error: {e:?}");
                 Client::send_notif(
                     &notif_sender,
                     &notif_waker,
@@ -985,7 +970,7 @@ fn wss_thread(
             }
         }
     } else {
-        tracing::error!("wss_thread: handshake failed, no response from server");
+        log::error!("wss_thread: handshake failed, no response from server");
         Client::send_notif(
             &notif_sender,
             &notif_waker,
@@ -1000,7 +985,7 @@ fn wss_thread(
             stream.set_read_timeout(None).expect("must not fail");
             stream.set_nonblocking(true).expect("must not fail");
         }
-        tungstenite::stream::MaybeTlsStream::Rustls(stream) => {
+        tungstenite::stream::MaybeTlsStream::NativeTls(stream) => {
             stream
                 .get_ref()
                 .set_read_timeout(None)
@@ -1010,7 +995,7 @@ fn wss_thread(
                 .set_nonblocking(true)
                 .expect("must not fail");
         }
-        _ => unreachable!("NativeTls not enabled"),
+        _ => unreachable!("Rustls not enabled"),
     }
 
     // Cache for sent requests to validate response types: (Request, sent_time, retry_count)
@@ -1034,7 +1019,7 @@ fn wss_thread(
         notif_waker.clone(),
     );
 
-    tracing::debug!("wss_thread: entering main message loop");
+    log::debug!("wss_thread: entering main message loop");
 
     loop {
         channel::select! {
@@ -1043,14 +1028,14 @@ fn wss_thread(
                     Ok(request) => {
                         // Handle close request specially
                         if matches!(request, Request::Close) {
-                            tracing::debug!("wss_thread: received close request");
+                            log::debug!("wss_thread: received close request");
                             let _ = ws_stream.close(None);
                             connected.store(false, Ordering::Relaxed);
                             break;
                         }
 
                         let (ws_msg, request_id) = request.to_ws_message(&token);
-                        tracing::debug!("wss_thread: sending request {:?} ", request);
+                        log::debug!("wss_thread: sending request {request:?} ");
                         // Cache sent request for response validation
                         {
                             let mut requests = sent_requests2.lock().expect("poisoned");
@@ -1067,7 +1052,7 @@ fn wss_thread(
                     }
                     Err(_) => {
                         // Channel closed, exit loop
-                        tracing::debug!("wss_thread: request channel closed, exiting");
+                        log::debug!("wss_thread: request channel closed, exiting");
                         break;
                     }
                 }
@@ -1078,7 +1063,7 @@ fn wss_thread(
                 //      configured with .setnonblocking(true)
                 match ws_stream.read() {
                     Ok(WsMessage::Text(text)) => {
-                        tracing::debug!("wss_thread: received text message");
+                        log::debug!("wss_thread: received text message");
                         // Pass the message directly to the handler
                         let msg = WsMessage::Text(text);
                         if let Err(e) = handle_wss_message(
@@ -1098,7 +1083,7 @@ fn wss_thread(
                         }
                     }
                     Ok(WsMessage::Close(_)) => {
-                        tracing::info!("wss_thread: WebSocket connection closed by server");
+                        log::info!("wss_thread: WebSocket connection closed by server");
                         Client::send_notif(&notif_sender, &notif_waker, Notification::Disconnected.into());
                         break;
                     }
@@ -1107,20 +1092,20 @@ fn wss_thread(
                         thread::sleep(Duration::from_millis(10));
                     }
                     Err(e) => {
-                        tracing::warn!("wss_thread: WebSocket error: {:?}", e);
+                        log::warn!("wss_thread: WebSocket error: {e:?}");
                         Client::send_notif(&notif_sender, &notif_waker, Notification::Disconnected.into());
                         break;
                     }
                     Ok(m) => {
                         // Ignore other message types
-                        tracing::debug!("wss_thread: received unexpected message type: {}", m);
+                        log::debug!("wss_thread: received unexpected message type: {m}");
                     }
                 }
             }
         }
     }
 
-    tracing::debug!("wss_thread: exiting");
+    log::debug!("wss_thread: exiting");
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1150,11 +1135,7 @@ fn handle_wss_message(
         return Ok(());
     };
 
-    tracing::debug!(
-        "handle_wss_message: received response={:?} request_id={:?}",
-        response,
-        request_id
-    );
+    log::debug!("handle_wss_message: received response={response:?} request_id={request_id:?}");
 
     // Handle error responses first - they're always valid and we remove from cache
     if let Response::Error { error } = &response {
@@ -1168,7 +1149,7 @@ fn handle_wss_message(
             if let Some((Request::FetchUser { id }, _, _)) = &original_request {
                 if let Ok(uid) = user_id.lock() {
                     if *uid == Some(*id) {
-                        tracing::warn!(
+                        log::warn!(
                             "User {} failed to fetch their own info: {} - {}",
                             id,
                             error.code,
@@ -1181,7 +1162,7 @@ fn handle_wss_message(
             // Handle UNAUTHORIZED FetchUser specially - create unknown user
             if error.code == "UNAUTHORIZED" {
                 if let Some((Request::FetchUser { id }, _, _)) = original_request {
-                    tracing::warn!(
+                    log::warn!(
                         "Cannot fetch user {}: {} - using unknown user placeholder",
                         id,
                         error.message
@@ -1201,7 +1182,7 @@ fn handle_wss_message(
             }
         }
         let wss_error = format!("WSS error: {} - {}", error.code, error.message);
-        tracing::error!("{wss_error}");
+        log::error!("{wss_error}");
         return Err(wss_error);
     }
 
@@ -1216,7 +1197,7 @@ fn handle_wss_message(
 
         if let Some(expected) = expected_response_type {
             if !matches_response_type(&response, expected) {
-                tracing::error!("Response {response:?} do not match request {request:?}");
+                log::error!("Response {response:?} do not match request {request:?}");
                 return Err(format!(
                     "Response type mismatch for {req_id}: expected {expected:?}, got {response:?}"
                 ));
@@ -1317,7 +1298,7 @@ fn handle_connected(
 }
 
 fn handle_pong(last_ping_time: &Arc<Mutex<Option<Instant>>>) -> Result<(), String> {
-    tracing::debug!("handle_pong: received pong, connection healthy");
+    log::debug!("handle_pong: received pong, connection healthy");
     // Reset ping tracking on successful pong
     {
         let mut ping_time = last_ping_time.lock().expect("poisoned");
@@ -1333,7 +1314,7 @@ fn fetch_user_maybe(
 ) {
     if let Some(id) = user {
         if id == Uuid::nil() {
-            tracing::error!("attempting to fetch user with Uuid::nil()");
+            log::error!("attempting to fetch user with Uuid::nil()");
             return;
         }
         if !users.lock().expect("poisoned").contains_key(&id) {
@@ -1353,7 +1334,7 @@ fn handle_org(
 ) -> Result<(), String> {
     let org_id = org.id;
 
-    tracing::debug!(
+    log::debug!(
         "handle_org: received org update, org_id={} name={}",
         org_id,
         org.name
@@ -1391,10 +1372,8 @@ fn handle_org(
     }
 
     if missing_users > 0 || missing_wallets > 0 {
-        tracing::debug!(
-            "handle_org: fetching {} missing users, {} missing wallets",
-            missing_users,
-            missing_wallets
+        log::debug!(
+            "handle_org: fetching {missing_users} missing users, {missing_wallets} missing wallets"
         );
     }
 
@@ -1419,7 +1398,7 @@ fn handle_wallet(
     let wallet_id = wallet.id;
     let owner_id = wallet.owner;
 
-    tracing::debug!(
+    log::debug!(
         "handle_wallet: received wallet update, wallet_id={} alias={} status={:?}",
         wallet_id,
         wallet.alias,
@@ -1451,10 +1430,8 @@ fn handle_wallet(
         let mut orgs_guard = orgs.lock().expect("poisoned");
         if let Some(org) = orgs_guard.get_mut(&org_id) {
             if org.wallets.insert(wallet_id) {
-                tracing::debug!(
-                    "handle_wallet: added wallet_id={} to org_id={} wallets set",
-                    wallet_id,
-                    org_id
+                log::debug!(
+                    "handle_wallet: added wallet_id={wallet_id} to org_id={org_id} wallets set"
                 );
             }
         }
@@ -1465,7 +1442,7 @@ fn handle_wallet(
     {
         let users_guard = users.lock().expect("poisoned");
         if !users_guard.contains_key(&owner_id) && owner_id != Uuid::nil() {
-            tracing::debug!("handle_wallet: fetching owner user_id={}", owner_id);
+            log::debug!("handle_wallet: fetching owner user_id={owner_id}");
             let _ = request_sender.send(Request::FetchUser { id: owner_id });
         }
     }
@@ -1488,7 +1465,7 @@ fn handle_user(
 ) -> Result<(), String> {
     let user_id = user.uuid;
 
-    tracing::debug!(
+    log::debug!(
         "handle_user: received user update, user_id={} name={} role={:?}",
         user_id,
         user.name,
@@ -1522,21 +1499,15 @@ pub fn handle_delete_user_org(
 ) {
     if let Some(user) = user {
         if target_user != user {
-            tracing::debug!(
-                "handle_delete_user_org: ignoring deletion for different user, target={} current={}",
-                target_user,
-                user
+            log::debug!(
+                "handle_delete_user_org: ignoring deletion for different user, target={target_user} current={user}"
             );
             return;
         }
 
-        tracing::info!(
-            "handle_delete_user_org: user removed from org, user_id={} org_id={}",
-            user,
-            org
-        );
+        log::info!("handle_delete_user_org: user removed from org, user_id={user} org_id={org}");
 
-        tracing::debug!("handle_delete_user_org: removing org from cache");
+        log::debug!("handle_delete_user_org: removing org from cache");
         orgs.lock().expect("poisoned").remove(&org);
 
         // Send response
@@ -1563,11 +1534,11 @@ macro_rules! check_connection {
 
 impl Backend for Client {
     fn connect_ws(&mut self, url: String, version: u8, notif_sender: channel::Sender<Message>) {
-        tracing::info!("connect_ws: connecting to WebSocket url={}", url);
+        log::info!("connect_ws: connecting to WebSocket url={url}");
 
         // Close existing connection if any
         if self.connected.load(Ordering::Relaxed) {
-            tracing::debug!("connect_ws: closing existing connection");
+            log::debug!("connect_ws: closing existing connection");
             self.close();
         }
 
@@ -1594,7 +1565,7 @@ impl Backend for Client {
         self.connected = Arc::new(AtomicBool::new(false));
         let connected = self.connected.clone();
 
-        tracing::debug!("connect_ws: spawning WebSocket thread");
+        log::debug!("connect_ws: spawning WebSocket thread");
 
         let notif_sender = notif_sender.clone();
         let notif_waker = self.notif_waker.clone();
@@ -1629,48 +1600,33 @@ impl Backend for Client {
         let auth_client_2 = self.auth_client.clone();
         let user_agent = self.user_agent.clone();
 
-        tracing::debug!("auth_request: starting for email={}", email);
+        log::debug!("auth_request: starting for email={email}");
 
-        let rt = tokio::runtime::Handle::current();
-        rt.spawn(async move {
-            tracing::debug!(
-                "auth_request: fetching service config for network={:?}",
-                network
-            );
-            let config =
-                match tokio::task::spawn_blocking(move || get_service_config_blocking(network))
-                    .await
-                {
-                    Ok(Ok(cfg)) => {
-                        tracing::debug!(
-                            "auth_request: got config auth_api_url={} backend_api_url={}",
-                            cfg.auth_api_url,
-                            cfg.backend_api_url
-                        );
-                        cfg
-                    }
-                    Ok(Err(e)) => {
-                        tracing::debug!("auth_request: failed to get service config: {:?}", e);
-                        Client::send_notif(
-                            &notif_sender,
-                            &notif_waker,
-                            Notification::AuthCodeFail.into(),
-                        );
-                        return;
-                    }
-                    Err(e) => {
-                        tracing::debug!("auth_request: spawn_blocking failed: {:?}", e);
-                        Client::send_notif(
-                            &notif_sender,
-                            &notif_waker,
-                            Notification::AuthCodeFail.into(),
-                        );
-                        return;
-                    }
-                };
+        // The work is blocking behind an async facade, so it gets a thread rather than a task.
+        thread::spawn(move || {
+            log::debug!("auth_request: fetching service config for network={network:?}");
+            let config = match get_service_config_blocking(network) {
+                Ok(cfg) => {
+                    log::debug!(
+                        "auth_request: got config auth_api_url={} backend_api_url={}",
+                        cfg.auth_api_url,
+                        cfg.backend_api_url
+                    );
+                    cfg
+                }
+                Err(e) => {
+                    log::debug!("auth_request: failed to get service config: {e:?}");
+                    Client::send_notif(
+                        &notif_sender,
+                        &notif_waker,
+                        Notification::AuthCodeFail.into(),
+                    );
+                    return;
+                }
+            };
 
             // Create auth client
-            tracing::debug!(
+            log::debug!(
                 "auth_request: creating AuthClient with url={} email={}",
                 config.auth_api_url,
                 email_clone
@@ -1683,14 +1639,14 @@ impl Backend for Client {
             );
 
             // Send OTP (requires async for the HTTP call)
-            tracing::debug!("auth_request: sending OTP request");
-            let result = match auth_client.sign_in_otp().await {
+            log::debug!("auth_request: sending OTP request");
+            let result = match block_on(auth_client.sign_in_otp()) {
                 Ok(()) => {
-                    tracing::debug!("auth_request: OTP sent successfully");
+                    log::debug!("auth_request: OTP sent successfully");
                     Ok(auth_client)
                 }
                 Err(e) => {
-                    tracing::debug!(
+                    log::debug!(
                         "auth_request: OTP request failed: http_status={:?} error={}",
                         e.http_status,
                         e.error
@@ -1728,7 +1684,7 @@ impl Backend for Client {
                     if let Ok(mut client_guard) = auth_client_2.lock() {
                         *client_guard = Some(client);
                     }
-                    tracing::debug!("auth_request: sending AuthCodeSent notification");
+                    log::debug!("auth_request: sending AuthCodeSent notification");
                     Client::send_notif(
                         &notif_sender,
                         &notif_waker,
@@ -1743,7 +1699,7 @@ impl Backend for Client {
     }
 
     fn auth_code(&mut self, code: String) {
-        tracing::debug!("auth_code: starting OTP verification");
+        log::debug!("auth_code: starting OTP verification");
 
         let notif_sender = self.notif_sender.clone();
         let notif_waker = self.notif_waker.clone();
@@ -1751,8 +1707,7 @@ impl Backend for Client {
         let network_dir = self.network_dir.clone();
         let token_shared = Arc::clone(&self.token);
 
-        let rt = tokio::runtime::Handle::current();
-        rt.spawn(async move {
+        thread::spawn(move || {
             // Get auth client
             let auth_client = {
                 let client_guard = auth_client_shared.lock().expect("poisoned");
@@ -1761,21 +1716,21 @@ impl Backend for Client {
             let auth_client = match auth_client {
                 Some(client) => client,
                 None => {
-                    tracing::error!("auth_code: no auth client available");
+                    log::error!("auth_code: no auth client available");
                     Client::send_notif(&notif_sender, &notif_waker, Notification::LoginFail.into());
                     return;
                 }
             };
 
             // Verify OTP
-            tracing::debug!("auth_code: verifying OTP");
-            let tokens = match auth_client.verify_otp(code.trim()).await {
+            log::debug!("auth_code: verifying OTP");
+            let tokens = match block_on(auth_client.verify_otp(code.trim())) {
                 Ok(tokens) => {
-                    tracing::debug!("auth_code: OTP verified successfully");
+                    log::debug!("auth_code: OTP verified successfully");
                     tokens
                 }
                 Err(e) => {
-                    tracing::warn!("auth_code: OTP verification failed: {:?}", e);
+                    log::warn!("auth_code: OTP verification failed: {e:?}");
                     Client::send_notif(&notif_sender, &notif_waker, Notification::LoginFail.into());
                     return;
                 }
@@ -1783,18 +1738,24 @@ impl Backend for Client {
 
             // Update cache if network_dir is available
             let access_token = if let Some(ref network_dir) = network_dir {
-                tracing::debug!("auth_code: updating token cache");
-                match update_connect_cache(network_dir, &tokens, &auth_client, false, None).await {
+                log::debug!("auth_code: updating token cache");
+                match block_on(update_connect_cache(
+                    network_dir,
+                    &tokens,
+                    &auth_client,
+                    false,
+                    None,
+                )) {
                     Ok(updated_tokens) => updated_tokens.access_token,
                     Err(e) => {
                         // Cache update failed, but we still have tokens
-                        tracing::error!("auth_code: failed to cache token on disk: {e}");
+                        log::error!("auth_code: failed to cache token on disk: {e}");
                         tokens.access_token
                     }
                 }
             } else {
                 // No network_dir, just use the token
-                tracing::debug!("auth_code: no network_dir, skipping cache update");
+                log::debug!("auth_code: no network_dir, skipping cache update");
                 tokens.access_token
             };
 
@@ -1802,7 +1763,7 @@ impl Backend for Client {
                 *token_guard = Some(access_token.clone());
             }
 
-            tracing::info!("auth_code: login successful");
+            log::info!("auth_code: login successful");
 
             Client::send_notif(
                 &notif_sender,
@@ -1850,15 +1811,15 @@ impl Backend for Client {
 
     fn close(&mut self) {
         if !self.connected.load(Ordering::Relaxed) {
-            tracing::debug!("close: already disconnected");
+            log::debug!("close: already disconnected");
             return;
         }
 
-        tracing::info!("close: closing WebSocket connection");
+        log::info!("close: closing WebSocket connection");
 
         // Send close message if possible
         if let Some(sender) = &self.request_sender {
-            tracing::debug!("close: sending close request");
+            log::debug!("close: sending close request");
             let _ = sender.send(Request::Close);
         }
 
@@ -1867,7 +1828,7 @@ impl Backend for Client {
         self.connected.store(false, Ordering::Relaxed);
         self.request_sender = None;
 
-        tracing::debug!("close: connection closed");
+        log::debug!("close: connection closed");
     }
 
     #[cfg(test)]
@@ -1882,7 +1843,7 @@ impl Backend for Client {
     fn edit_wallet(&mut self, wallet: Wallet) {
         check_connection!(self);
 
-        tracing::debug!(
+        log::debug!(
             "edit_wallet: sending edit request for wallet_id={}",
             wallet.id
         );
@@ -1904,7 +1865,7 @@ impl Backend for Client {
     fn edit_xpub(&mut self, wallet_id: Uuid, xpub: Option<ws_business::Xpub>, key_id: u8) {
         check_connection!(self);
 
-        tracing::debug!(
+        log::debug!(
             "edit_xpub: sending edit request for wallet_id={} key_id={} xpub={}",
             wallet_id,
             key_id,
@@ -1923,7 +1884,7 @@ impl Backend for Client {
     fn device_registered(&mut self, wallet_id: Uuid, infos: ws_business::RegistrationInfos) {
         check_connection!(self);
 
-        tracing::debug!(
+        log::debug!(
             "device_registered: sending registration for wallet_id={} fingerprint={}",
             wallet_id,
             infos.fingerprint
@@ -1994,7 +1955,7 @@ impl DummyServer {
             let (request, _token, id) = match ws_business::Request::from_ws_message(connect_msg) {
                 Ok(r) => r,
                 Err(e) => {
-                    tracing::error!("{e}");
+                    log::error!("{e}");
                     return;
                 }
             };
@@ -2004,7 +1965,7 @@ impl DummyServer {
                     // Respond with connected
                     let connected = Response::Connected {
                         version: 1,
-                        user: uuid::Uuid::nil(),
+                        user: liana_connect::Uuid::nil(),
                     };
                     let resp = connected.to_ws_message(Some(&id));
                     if ws_stream.send(resp).is_err() {

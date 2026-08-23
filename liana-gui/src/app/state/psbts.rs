@@ -63,7 +63,7 @@ impl State for PsbtsPanel {
 
     fn update(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         cache: &Cache,
         message: Message,
     ) -> Task<Message> {
@@ -93,7 +93,7 @@ impl State for PsbtsPanel {
                 if let Some(tx) = &mut self.selected_tx {
                     return tx.update(daemon, cache, message);
                 } else if self.modal.is_none() {
-                    let modal =
+                    let mut modal =
                         ExportModal::new(Some(daemon.clone()), ImportExportType::ImportPsbt(None));
                     let launch = modal.launch(false);
                     self.modal = Some(modal);
@@ -155,7 +155,7 @@ impl State for PsbtsPanel {
 
     fn reload(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         wallet: Arc<Wallet>,
     ) -> Task<Message> {
         self.wallet = wallet;

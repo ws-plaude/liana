@@ -211,12 +211,7 @@ impl Step for RemoteBackendLogin {
             },
             ConnectionStep::EnterEmail { email } => match message {
                 Message::SelectBackend(message::SelectBackend::EmailEdited(value)) => {
-                    email.valid = value.is_empty()
-                        || email_address::EmailAddress::parse_with_options(
-                            &value,
-                            email_address::Options::default().with_required_tld(),
-                        )
-                        .is_ok();
+                    email.valid = value.is_empty() || crate::utils::is_valid_email(&value);
                     email.value = value;
                 }
                 Message::SelectBackend(message::SelectBackend::ExistingConnectAccounts(
@@ -252,15 +247,7 @@ impl Step for RemoteBackendLogin {
                                     client::BackendType::LianaConnect,
                                 )
                                 .await
-                                .map_err(|e| {
-                                    if e.status() == Some(reqwest::StatusCode::NOT_FOUND) {
-                                        Error::Unexpected(
-                                            "Remote servers are unresponsive".to_string(),
-                                        )
-                                    } else {
-                                        Error::Unexpected(e.to_string())
-                                    }
-                                })?;
+                                .map_err(|e| Error::Unexpected(e.to_string()))?;
                                 let client = AuthClient::new(
                                     config.auth_api_url,
                                     config.auth_api_public_key,
@@ -522,13 +509,7 @@ pub async fn connect_with_existing_account(
 ) -> Result<context::RemoteBackend, Error> {
     let config = client::get_service_config(network, client::BackendType::LianaConnect)
         .await
-        .map_err(|e| {
-            if e.status() == Some(reqwest::StatusCode::NOT_FOUND) {
-                Error::Unexpected("Remote servers are unresponsive".to_string())
-            } else {
-                Error::Unexpected(e.to_string())
-            }
-        })?;
+        .map_err(|e| Error::Unexpected(e.to_string()))?;
 
     let client = AuthClient::new(
         config.auth_api_url,
@@ -542,7 +523,7 @@ pub async fn connect_with_existing_account(
         .ok_or(Error::Unexpected("Account must be in cache".to_string()))?
         .tokens;
 
-    if tokens.expires_at < chrono::Utc::now().timestamp() {
+    if tokens.expires_at < crate::utils::now().as_secs() as i64 {
         // BackendClient::connect runs right after this, so we don't yet know
         // the user_id from the JWT. `upsert_credential` preserves whatever
         // user_id the existing row already carries.
@@ -647,7 +628,7 @@ impl Step for ImportRemoteWallet {
                 self.active_option = (self.active_option != Some(option)).then_some(option);
             }
             Message::ImportRemoteWallet(message::ImportRemoteWallet::ImportDescriptorFromFile) => {
-                let modal = ExportModal::new(None, ImportExportType::FromBackup);
+                let mut modal = ExportModal::new(None, ImportExportType::FromBackup);
                 let launch = modal.launch(false);
                 self.modal = ImportDescriptorModal::Export(modal);
                 return launch;

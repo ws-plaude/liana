@@ -30,6 +30,7 @@ use iced::{
     widget::{column, container, Space},
     Alignment, Length,
 };
+use liana_connect::Uuid;
 use liana_ui::{
     component::{
         button::{self, EntryWidth},
@@ -42,7 +43,6 @@ use liana_ui::{
     widget::*,
     Variant,
 };
-use uuid::Uuid;
 
 pub const INSTALLER_STEPS: usize = 7;
 pub const MENU_ENTRY_HEIGHT: u32 = 100;

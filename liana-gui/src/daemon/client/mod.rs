@@ -2,13 +2,12 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::iter::FromIterator;
 
-use async_trait::async_trait;
 use lianad::bip329::Labels;
 use lianad::commands::{GetLabelsBip329Result, UpdateDerivIndexesResult};
+use log::{error, info};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tracing::{error, info};
 
 pub mod error;
 pub mod jsonrpc;
@@ -49,15 +48,14 @@ impl<C: Client> Lianad<C> {
         method: &str,
         input: Option<T>,
     ) -> Result<U, DaemonError> {
-        info!("{}", method);
+        info!("{method}");
         self.client.request(method, input).map_err(|e| {
-            error!("method {} failed: {:?}", method, e);
+            error!("method {method} failed: {e:?}");
             e.into()
         })
     }
 }
 
-#[async_trait]
 impl<C: Client + Send + Sync + Debug> Daemon for Lianad<C> {
     fn backend(&self) -> DaemonBackend {
         DaemonBackend::ExternalLianad

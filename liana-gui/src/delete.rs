@@ -54,16 +54,16 @@ pub async fn delete_failed_install(
     let lianad_directory = network_dir.lianad_data_directory(wallet_id);
 
     if !wallet_id.is_legacy() {
-        ignore_not_found(tokio::fs::remove_dir_all(lianad_directory.path()).await)?;
+        ignore_not_found(std::fs::remove_dir_all(lianad_directory.path()))?;
     } else {
         // if this is a legacy wallet, then it is the only wallet in the network directory.
-        ignore_not_found(tokio::fs::remove_file(lianad_directory.sqlite_db_file_path()).await)?;
-        ignore_not_found(
-            tokio::fs::remove_dir_all(lianad_directory.lianad_watchonly_wallet_path()).await,
-        )?;
-        ignore_not_found(
-            tokio::fs::remove_file(lianad_directory.path().join("daemon.toml")).await,
-        )?;
+        ignore_not_found(std::fs::remove_file(lianad_directory.sqlite_db_file_path()))?;
+        ignore_not_found(std::fs::remove_dir_all(
+            lianad_directory.lianad_watchonly_wallet_path(),
+        ))?;
+        ignore_not_found(std::fs::remove_file(
+            lianad_directory.path().join("daemon.toml"),
+        ))?;
     }
 
     let mut remaining_user_ids = HashSet::<String>::new();
@@ -114,16 +114,16 @@ pub async fn delete_wallet(
     let lianad_directory = network_dir.lianad_data_directory(&wallet_id);
 
     if !wallet_id.is_legacy() {
-        ignore_not_found(tokio::fs::remove_dir_all(lianad_directory.path()).await)?;
+        ignore_not_found(std::fs::remove_dir_all(lianad_directory.path()))?;
     } else {
         // if this is a legacy wallet, then it is the only wallet in the network directory.
-        ignore_not_found(tokio::fs::remove_file(lianad_directory.sqlite_db_file_path()).await)?;
-        ignore_not_found(
-            tokio::fs::remove_dir_all(lianad_directory.lianad_watchonly_wallet_path()).await,
-        )?;
-        ignore_not_found(
-            tokio::fs::remove_file(lianad_directory.path().join("daemon.toml")).await,
-        )?;
+        ignore_not_found(std::fs::remove_file(lianad_directory.sqlite_db_file_path()))?;
+        ignore_not_found(std::fs::remove_dir_all(
+            lianad_directory.lianad_watchonly_wallet_path(),
+        ))?;
+        ignore_not_found(std::fs::remove_file(
+            lianad_directory.path().join("daemon.toml"),
+        ))?;
     }
 
     if delete_liana_connect {
@@ -148,13 +148,13 @@ pub async fn delete_wallet(
             .await
             .map_err(|e| DeleteError::Connect(e.to_string()))?
             {
-                tracing::info!("Deleting wallet on Liana-Connect {} backend", network);
+                log::info!("Deleting wallet on Liana-Connect {network} backend");
                 client
                     .delete_wallet()
                     .await
                     .map_err(|e| DeleteError::Connect(e.to_string()))?;
             } else {
-                tracing::warn!("Wallet not found on the platform");
+                log::warn!("Wallet not found on the platform");
             }
         }
     }

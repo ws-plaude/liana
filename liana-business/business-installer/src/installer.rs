@@ -2,7 +2,7 @@ use crate::state::{
     views::login::{Login, LoginState},
     Msg as Message, SharedWaker, State,
 };
-use crossbeam::channel::{self};
+use crossbeam_channel as channel;
 use iced::{
     event,
     keyboard::{self, key::Named},
@@ -15,11 +15,11 @@ use liana_gui::{
     services::connect::client::{backend::BackendClient, BackendType},
 };
 use liana_ui::widget::Element;
+use log::debug;
 use std::{
     pin::Pin,
     task::{Context, Poll},
 };
-use tracing::debug;
 
 /// BusinessInstaller implements the Installer trait from liana-gui.
 pub struct BusinessInstaller {
@@ -30,20 +30,17 @@ impl BusinessInstaller {
     fn new(datadir: LianaDirectory, network: bitcoin::Network) -> (Self, Task<Message>) {
         // Log if signet mode is enabled via LIANA_BUSINESS_SIGNET env var
         if network != bitcoin::Network::Bitcoin {
-            tracing::info!(
-                "LIANA_BUSINESS_SIGNET enabled, using network: {:?}",
-                network
-            );
+            log::info!("LIANA_BUSINESS_SIGNET enabled, using network: {network:?}");
 
             // Log custom URL overrides if set
             if let Ok(url) = std::env::var("LIANA_BUSINESS_SIGNET_API_URL") {
                 if !url.is_empty() {
-                    tracing::info!("LIANA_BUSINESS_SIGNET_API_URL: {}", url);
+                    log::info!("LIANA_BUSINESS_SIGNET_API_URL: {url}");
                 }
             }
             if let Ok(url) = std::env::var("LIANA_BUSINESS_SIGNET_WS_URL") {
                 if !url.is_empty() {
-                    tracing::info!("LIANA_BUSINESS_SIGNET_WS_URL: {}", url);
+                    log::info!("LIANA_BUSINESS_SIGNET_WS_URL: {url}");
                 }
             }
         }
@@ -92,9 +89,9 @@ impl Installer<'_, Message> for BusinessInstaller {
 
     fn update(&mut self, message: Message) -> Task<Message> {
         if !matches!(message, Message::Update) {
-            tracing::debug!("BusinessInstaller::update received {:?}", message);
+            log::debug!("BusinessInstaller::update received {message:?}");
         } else {
-            tracing::trace!("BusinessInstaller::update received {:?}", message);
+            log::trace!("BusinessInstaller::update received {message:?}");
         }
         self.state.update(message)
     }
@@ -189,7 +186,7 @@ impl iced::futures::Stream for NotifListener {
         // Use non-blocking try_recv to avoid blocking the async executor
         match self.receiver.try_recv() {
             Ok(msg) => {
-                tracing::debug!("NotifListener: received {:?}", msg);
+                log::debug!("NotifListener: received {msg:?}");
                 Poll::Ready(Some(msg))
             }
             Err(channel::TryRecvError::Empty) => {

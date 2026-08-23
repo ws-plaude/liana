@@ -796,7 +796,7 @@ impl DerivedSinglePathLianaDesc {
             descriptor::Descriptor::Tr(_) => {
                 let desc = self.definite_desc();
                 if let Err(e) = psbtin.update_with_descriptor_unchecked(&desc) {
-                    log::error!("BUG! Please report this! Error when adding key origins for desc: {}. Descriptor: {}.", e, desc);
+                    log::error!("BUG! Please report this! Error when adding key origins for desc: {e}. Descriptor: {desc}.");
                 }
             }
             _ => unreachable!("Only ever a wsh() or a tr() descriptor."),
@@ -813,7 +813,7 @@ impl DerivedSinglePathLianaDesc {
             descriptor::Descriptor::Tr(_) => {
                 let desc = self.definite_desc();
                 if let Err(e) = psbtout.update_with_descriptor_unchecked(&desc) {
-                    log::error!("BUG! Please report this! Error when adding key origins for desc: {}. Descriptor: {}.", e, desc);
+                    log::error!("BUG! Please report this! Error when adding key origins for desc: {e}. Descriptor: {desc}.");
                 }
             }
             _ => unreachable!("Only ever a wsh() or a tr() descriptor."),

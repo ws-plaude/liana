@@ -3,13 +3,13 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, ErrorKind, Seek, SeekFrom};
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::thread::{self, sleep};
 use std::time::Duration;
 
-use iced::futures::{SinkExt, Stream};
+use futures::{channel::mpsc, executor::block_on, SinkExt, Stream, StreamExt};
 use iced::stream::channel;
 use iced::{Alignment, Length, Subscription, Task};
-use tokio::runtime::Handle;
-use tracing::{debug, info, warn};
+use log::{debug, info, warn};
 
 use liana::miniscript::bitcoin;
 use liana_ui::{
@@ -48,7 +48,7 @@ const SYNCING_PROGRESS_3: &str = "Bitcoin Core is synchronising the blockchain. 
 type Lianad = client::Lianad<client::jsonrpc::JsonRPCClient>;
 type StartedResult = Result<
     (
-        Arc<dyn Daemon + Sync + Send>,
+        Arc<crate::daemon::AnyDaemon>,
         Option<Bitcoind>,
         GetInfoResult,
     ),
@@ -73,7 +73,7 @@ pub enum Step {
     Connecting,
     StartingDaemon,
     Syncing {
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         progress: f64,
         bitcoind_logs: String,
     },
@@ -90,7 +90,7 @@ pub enum Message {
             (
                 Arc<Wallet>,
                 Cache,
-                Arc<dyn Daemon + Sync + Send>,
+                Arc<crate::daemon::AnyDaemon>,
                 Option<Bitcoind>,
                 Option<Backup>,
             ),
@@ -103,7 +103,7 @@ pub enum Message {
                 Cache,
                 Arc<Wallet>,
                 app::Config,
-                Arc<dyn Daemon + Sync + Send>,
+                Arc<crate::daemon::AnyDaemon>,
                 LianaDirectory,
                 Option<Bitcoind>,
             ),
@@ -112,7 +112,7 @@ pub enum Message {
         /* restored_from_backup */ bool,
     ),
     Started(StartedResult),
-    Loaded(Result<(Arc<dyn Daemon + Sync + Send>, GetInfoResult), Error>),
+    Loaded(Result<(Arc<crate::daemon::AnyDaemon>, GetInfoResult), Error>),
     BitcoindLog(Option<String>),
     Failure(DaemonError),
     None,
@@ -159,7 +159,7 @@ impl Loader {
 
     fn maybe_skip_syncing(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         info: GetInfoResult,
     ) -> Task<Message> {
         // If the node is not Bitcoin Core or otherwise the wallet was previously synced (blockheight > 0),
@@ -189,7 +189,7 @@ impl Loader {
 
     fn on_load(
         &mut self,
-        res: Result<(Arc<dyn Daemon + Sync + Send>, GetInfoResult), Error>,
+        res: Result<(Arc<crate::daemon::AnyDaemon>, GetInfoResult), Error>,
     ) -> Task<Message> {
         match res {
             Ok((daemon, info)) => {
@@ -293,8 +293,8 @@ impl Loader {
         if let Step::Syncing { daemon, .. } = &mut self.step {
             if daemon.backend().is_embedded() {
                 info!("Stopping internal daemon...");
-                if let Err(e) = Handle::current().block_on(async { daemon.stop().await }) {
-                    warn!("Internal daemon failed to stop: {}", e);
+                if let Err(e) = block_on(async { daemon.stop().await }) {
+                    warn!("Internal daemon failed to stop: {e}");
                 } else {
                     info!("Internal daemon stopped");
                 }
@@ -355,68 +355,83 @@ impl Loader {
 }
 
 fn get_bitcoind_log(log_path: PathBuf) -> impl Stream<Item = Option<String>> {
-    type Sender = iced::futures::channel::mpsc::Sender<Option<String>>;
-    channel(5, move |mut output: Sender| async move {
-        loop {
-            // Reduce the io load.
-            tokio::time::sleep(Duration::from_millis(500)).await;
-
-            // Open the log file and seek to its end, with some breathing room to make sure
-            // we don't skip all "UpdateTip" lines. This is to avoid making BufReader read
-            // the whole file every single time below.
-            let mut file = match File::open(&log_path) {
-                Ok(file) => file,
-                Err(e) => {
-                    log::warn!("Opening bitcoind log file: {}", e);
-                    continue;
+    channel(
+        5,
+        move |mut output: mpsc::Sender<Option<String>>| async move {
+            // The loop sleeps between two reads of a file, so it gets a thread of its own rather than
+            // an executor one.
+            let (tx, mut rx) = mpsc::unbounded();
+            thread::spawn(move || loop {
+                if tx.is_closed() {
+                    return;
                 }
-            };
-            match file.metadata() {
-                Ok(m) => {
-                    let file_len = m.len();
-                    let offset = 1024 * 1024;
-                    if file_len > offset {
-                        if let Err(e) = file.seek(SeekFrom::Start(file_len.saturating_sub(offset)))
-                        {
-                            log::error!("Seeking to end of bitcoind log file: {}", e);
+                // Reduce the io load.
+                sleep(Duration::from_millis(500));
+
+                // Open the log file and seek to its end, with some breathing room to make sure
+                // we don't skip all "UpdateTip" lines. This is to avoid making BufReader read
+                // the whole file every single time below.
+                let mut file = match File::open(&log_path) {
+                    Ok(file) => file,
+                    Err(e) => {
+                        log::warn!("Opening bitcoind log file: {e}");
+                        continue;
+                    }
+                };
+                match file.metadata() {
+                    Ok(m) => {
+                        let file_len = m.len();
+                        let offset = 1024 * 1024;
+                        if file_len > offset {
+                            if let Err(e) =
+                                file.seek(SeekFrom::Start(file_len.saturating_sub(offset)))
+                            {
+                                log::error!("Seeking to end of bitcoind log file: {e}");
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        log::error!("Getting bitcoind log file metadata: {e}");
+                    }
+                };
+
+                // Find the latest tip update line in bitcoind's debug.log. BufReader is only
+                // used to facilitates searching through the lines.
+                let reader = BufReader::new(file);
+                let last_update_tip = reader
+                    .lines()
+                    .filter(|l| {
+                        l.as_ref()
+                            .map(|l| l.contains("UpdateTip") || l.contains("blockheaders"))
+                            .unwrap_or(false)
+                    })
+                    .last();
+                match last_update_tip {
+                    Some(Ok(line)) => {
+                        if tx.unbounded_send(Some(line)).is_err() {
+                            return;
+                        }
+                    }
+                    res => {
+                        if let Some(Err(e)) = res {
+                            log::error!("Reading bitcoind log file: {e}");
+                        } else {
+                            log::warn!("Couldn't find an UpdateTip line in bitcoind log file.");
                         }
                     }
                 }
-                Err(e) => {
-                    log::error!("Getting bitcoind log file metadata: {}", e);
-                }
-            };
+            });
 
-            // Find the latest tip update line in bitcoind's debug.log. BufReader is only
-            // used to facilitates searching through the lines.
-            let reader = BufReader::new(file);
-            let last_update_tip = reader
-                .lines()
-                .filter(|l| {
-                    l.as_ref()
-                        .map(|l| l.contains("UpdateTip") || l.contains("blockheaders"))
-                        .unwrap_or(false)
-                })
-                .last();
-            match last_update_tip {
-                Some(Ok(line)) => {
-                    let _ = output.send(Some(line)).await;
-                }
-                res => {
-                    if let Some(Err(e)) = res {
-                        log::error!("Reading bitcoind log file: {}", e);
-                    } else {
-                        log::warn!("Couldn't find an UpdateTip line in bitcoind log file.");
-                    }
-                }
+            while let Some(line) = rx.next().await {
+                let _ = output.send(line).await;
             }
-        }
-    })
+        },
+    )
 }
 
 pub async fn load_application(
     wallet_settings: WalletSettings,
-    daemon: Arc<dyn Daemon + Sync + Send>,
+    daemon: Arc<crate::daemon::AnyDaemon>,
     info: GetInfoResult,
     datadir_path: LianaDirectory,
     network: bitcoin::Network,
@@ -426,7 +441,7 @@ pub async fn load_application(
     (
         Arc<Wallet>,
         Cache,
-        Arc<dyn Daemon + Sync + Send>,
+        Arc<crate::daemon::AnyDaemon>,
         Option<Bitcoind>,
         Option<Backup>,
     ),
@@ -553,7 +568,7 @@ pub fn cover<'a, T: 'a + Clone, C: Into<Element<'a, T>>>(
 
 async fn connect(
     socket_path: PathBuf,
-) -> Result<(Arc<dyn Daemon + Sync + Send>, GetInfoResult), Error> {
+) -> Result<(Arc<crate::daemon::AnyDaemon>, GetInfoResult), Error> {
     let client = client::jsonrpc::JsonRPCClient::new(socket_path);
     let daemon = Lianad::new(client);
 
@@ -561,7 +576,7 @@ async fn connect(
     let info = daemon.get_info().await?;
     info!("Connected to external daemon");
 
-    Ok((Arc::new(daemon), info))
+    Ok((Arc::new(crate::daemon::AnyDaemon::Lianad(daemon)), info))
 }
 
 // Daemon can start only if a config path is given.
@@ -595,11 +610,15 @@ pub async fn start_bitcoind_and_daemon(
     let daemon = EmbeddedDaemon::start(config)?;
     let info = daemon.get_info().await?;
 
-    Ok((Arc::new(daemon), bitcoind, info))
+    Ok((
+        Arc::new(crate::daemon::AnyDaemon::Embedded(Box::new(daemon))),
+        bitcoind,
+        info,
+    ))
 }
 
 async fn sync(
-    daemon: Arc<dyn Daemon + Sync + Send>,
+    daemon: Arc<crate::daemon::AnyDaemon>,
     sleep: bool,
 ) -> Result<GetInfoResult, DaemonError> {
     if sleep {

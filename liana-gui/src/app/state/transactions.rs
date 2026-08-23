@@ -108,7 +108,7 @@ impl State for TransactionsPanel {
 
     fn update(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         _cache: &Cache,
         message: Message,
     ) -> Task<Message> {
@@ -273,7 +273,7 @@ impl State for TransactionsPanel {
                         Some(daemon),
                         ImportExportType::Transactions,
                     ));
-                    if let TransactionsModal::Export(m) = &self.modal {
+                    if let TransactionsModal::Export(m) = &mut self.modal {
                         return m.launch(true);
                     }
                 }
@@ -302,7 +302,7 @@ impl State for TransactionsPanel {
 
     fn reload(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         _wallet: Arc<Wallet>,
     ) -> Task<Message> {
         self.selected_tx = None;
@@ -401,7 +401,7 @@ impl CreateRbfModal {
 
     fn update(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         _cache: &Cache,
         message: Message,
     ) -> Task<Message> {
@@ -465,7 +465,7 @@ impl CreateRbfModal {
 }
 
 async fn rbf(
-    daemon: Arc<dyn Daemon + Sync + Send>,
+    daemon: Arc<crate::daemon::AnyDaemon>,
     previous_tx: model::HistoryTransaction,
     is_cancel: bool,
     feerate_vb: Option<u64>,

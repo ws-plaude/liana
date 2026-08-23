@@ -25,20 +25,28 @@ impl fmt::Display for RandomnessError {
 
 impl error::Error for RandomnessError {}
 
-// Get some entrop from RDRAND when available.
+// Get some entropy from RDRAND when available.
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 fn cpu_randomness() -> Result<Option<[u8; 32]>, RandomnessError> {
-    if let Ok(mut rand_gen) = rdrand::RdRand::new() {
-        let mut buf = [0; 32];
-        rand_gen
-            .try_fill_bytes(&mut buf)
-            .map_err(|e| RandomnessError::Hardware(e.to_string()))?;
-        assert_ne!(buf, [0; 32]);
-        Ok(Some(buf))
-    } else {
-        // Not available.
-        Ok(None)
+    #[cfg(target_arch = "x86")]
+    use core::arch::x86::_rdrand32_step;
+    #[cfg(target_arch = "x86_64")]
+    use core::arch::x86_64::_rdrand32_step;
+
+    if !std::arch::is_x86_feature_detected!("rdrand") {
+        return Ok(None);
     }
+    let mut buf = [0; 32];
+    for chunk in buf.chunks_exact_mut(4) {
+        let mut val = 0u32;
+        // The instruction can transiently fail; Intel recommends up to 10 retries.
+        if !(0..10).any(|_| unsafe { _rdrand32_step(&mut val) } == 1) {
+            return Err(RandomnessError::Hardware("rdrand failure".to_string()));
+        }
+        chunk.copy_from_slice(&val.to_ne_bytes());
+    }
+    assert_ne!(buf, [0; 32]);
+    Ok(Some(buf))
 }
 
 // OS-generated randomness. See https://docs.rs/getrandom/latest/getrandom/#supported-targets

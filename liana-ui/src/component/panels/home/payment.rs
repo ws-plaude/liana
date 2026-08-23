@@ -15,6 +15,7 @@ use crate::{
         tooltip::tooltip_with_style,
         tooltip_custom,
     },
+    date::format_date,
     icon,
     theme::{self, amount},
     widget::{Container, Element, SpaceExt},
@@ -95,14 +96,9 @@ pub struct UIPayment<'a> {
     pub label: Option<&'a str>,
     pub address_label: Option<&'a str>,
     pub kind: PaymentKind,
-    pub time: Option<chrono::DateTime<chrono::Utc>>,
+    pub time: Option<i64>,
     pub amount: bitcoin::Amount,
     pub fiat_price: Option<FiatPrice>,
-}
-
-/// Format a date as "Mar 12, 2026".
-pub fn format_date(time: chrono::DateTime<chrono::Utc>) -> String {
-    time.format("%b %-d, %Y").to_string()
 }
 
 pub fn payment_card<'a, M: 'a + Clone>(payment: UIPayment<'a>, msg: Option<M>) -> Element<'a, M> {

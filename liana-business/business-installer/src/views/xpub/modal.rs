@@ -3,7 +3,7 @@ use crate::state::{
     views::{ModalStep, XpubEntryModalState, XpubInputSource},
     Msg, State,
 };
-use async_hwi::service::SigningDevice;
+use bwk_hwi::service::SigningDevice;
 use iced::{
     widget::{column, row, Space},
     Alignment, Length,
@@ -246,8 +246,8 @@ fn hw_section(state: &State) -> Element<'_, Msg> {
 }
 
 struct DeviceRenderData {
-    kind: async_hwi::DeviceKind,
-    version: Option<async_hwi::Version>,
+    kind: bwk_hwi::DeviceKind,
+    version: Option<bwk_hwi::Version>,
     fingerprint: Option<miniscript::bitcoin::bip32::Fingerprint>,
     state: DeviceState,
 }
@@ -304,7 +304,7 @@ fn device_card(data: DeviceRenderData, in_use: bool) -> Element<'static, Msg> {
     }
 }
 
-fn device_title(kind: async_hwi::DeviceKind, version: Option<&async_hwi::Version>) -> String {
+fn device_title(kind: bwk_hwi::DeviceKind, version: Option<&bwk_hwi::Version>) -> String {
     let kind_name = capitalize_first(&kind.to_string());
     match version {
         Some(version) => format!("{kind_name} {version}"),
@@ -312,16 +312,16 @@ fn device_title(kind: async_hwi::DeviceKind, version: Option<&async_hwi::Version
     }
 }
 
-fn locked_message(kind: async_hwi::DeviceKind, pairing_code: Option<String>) -> String {
+fn locked_message(kind: bwk_hwi::DeviceKind, pairing_code: Option<String>) -> String {
     match kind {
-        async_hwi::DeviceKind::Jade => "This device doesn't support taproot miniscript".to_string(),
+        bwk_hwi::DeviceKind::Jade => "This device doesn't support taproot miniscript".to_string(),
         _ => pairing_code
             .map(|code| format!("Pairing code: {code}"))
             .unwrap_or_else(|| "Please unlock the device".to_string()),
     }
 }
 
-fn unsupported_message(kind: async_hwi::DeviceKind, reason: &UnsupportedReason) -> String {
+fn unsupported_message(kind: bwk_hwi::DeviceKind, reason: &UnsupportedReason) -> String {
     match reason {
         UnsupportedReason::NotPartOfWallet(fingerprint) => {
             format!("Not part of this wallet (#{fingerprint})")
@@ -330,7 +330,7 @@ fn unsupported_message(kind: async_hwi::DeviceKind, reason: &UnsupportedReason) 
         UnsupportedReason::Version {
             minimal_supported_version,
         } => match kind {
-            async_hwi::DeviceKind::Jade => {
+            bwk_hwi::DeviceKind::Jade => {
                 "This device doesn't support taproot miniscript".to_string()
             }
             _ => format!(
@@ -346,21 +346,21 @@ fn extract_device_data(device: &SigningDevice<Msg, HardwareWalletRequestId>) -> 
     let kind = device.kind();
     let fingerprint = device.fingerprint();
 
-    fn translate_reason(reason: &async_hwi::service::UnsupportedReason) -> UnsupportedReason {
+    fn translate_reason(reason: &bwk_hwi::service::UnsupportedReason) -> UnsupportedReason {
         match reason {
-            async_hwi::service::UnsupportedReason::Version {
+            bwk_hwi::service::UnsupportedReason::Version {
                 minimal_supported_version,
             } => UnsupportedReason::Version {
                 minimal_supported_version: (*minimal_supported_version).into(),
             },
-            async_hwi::service::UnsupportedReason::Method(method) => {
+            bwk_hwi::service::UnsupportedReason::Method(method) => {
                 UnsupportedReason::Method(method)
             }
-            async_hwi::service::UnsupportedReason::NotPartOfWallet(fingerprint) => {
+            bwk_hwi::service::UnsupportedReason::NotPartOfWallet(fingerprint) => {
                 UnsupportedReason::NotPartOfWallet(*fingerprint)
             }
-            async_hwi::service::UnsupportedReason::WrongNetwork => UnsupportedReason::WrongNetwork,
-            async_hwi::service::UnsupportedReason::AppIsNotOpen => UnsupportedReason::AppIsNotOpen,
+            bwk_hwi::service::UnsupportedReason::WrongNetwork => UnsupportedReason::WrongNetwork,
+            bwk_hwi::service::UnsupportedReason::AppIsNotOpen => UnsupportedReason::AppIsNotOpen,
         }
     }
 

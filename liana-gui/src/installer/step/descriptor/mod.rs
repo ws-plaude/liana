@@ -13,13 +13,13 @@ use liana::{
 
 use liana_ui::{component::form, widget::Element};
 
-use async_hwi::DeviceKind;
+use bwk_hwi::DeviceKind;
 
 use crate::{
     app::{settings::KeySetting, state::export::ExportModal, wallet::wallet_name},
     backup::Backup,
     export::{ImportExportMessage, ImportExportType, Progress},
-    hw::{HardwareWallet, HardwareWallets},
+    hw::{AsyncDevice, HardwareWallet, HardwareWallets},
     installer::{
         decrypt::{Decrypt, DecryptModal},
         message::{self, Message},
@@ -113,7 +113,7 @@ impl Step for ImportDescriptor {
             }
             Message::ImportBackup => {
                 self.imported_backup = None;
-                let modal = ExportModal::new(None, ImportExportType::FromBackup);
+                let mut modal = ExportModal::new(None, ImportExportType::FromBackup);
                 let launch = modal.launch(false);
                 self.modal = ImportDescriptorModal::Export(modal);
                 Some(launch)
@@ -350,7 +350,7 @@ impl Step for RegisterDescriptor {
                         }
                     }
                     Err(e) => {
-                        if !matches!(e, Error::HardwareWallet(async_hwi::Error::UserRefused)) {
+                        if !matches!(e, Error::HardwareWallet(bwk_hwi::Error::UserRefused)) {
                             self.error = Some(e)
                         }
                     }
@@ -407,7 +407,7 @@ impl Step for RegisterDescriptor {
 }
 
 async fn register_wallet(
-    hw: std::sync::Arc<dyn async_hwi::HWI + Send + Sync>,
+    hw: AsyncDevice,
     fingerprint: Fingerprint,
     name: String,
     descriptor: String,
@@ -478,12 +478,12 @@ impl Step for BackupDescriptor {
                     let bytes = match bytes {
                         Ok(b) => b,
                         Err(e) => {
-                            tracing::error!("{e:?}");
+                            log::error!("{e:?}");
                             self.error = Some(Error::Backup(e));
                             return Task::none();
                         }
                     };
-                    let modal =
+                    let mut modal =
                         ExportModal::new(None, ImportExportType::ExportEncryptedDescriptor(bytes));
                     let launch = modal.launch(true);
                     self.modal = Some(modal);

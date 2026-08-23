@@ -1,4 +1,4 @@
-use async_hwi::{DeviceKind, Version};
+use bwk_hwi::{DeviceKind, Version};
 use liana::miniscript::{
     bitcoin::bip32::{ChildNumber, Fingerprint},
     descriptor::DescriptorPublicKey,

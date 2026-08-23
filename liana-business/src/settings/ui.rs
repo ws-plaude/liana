@@ -45,7 +45,7 @@ impl SettingsUI<Msg> for BusinessSettingsUI {
     fn new(
         data_dir: LianaDirectory,
         wallet: Arc<Wallet>,
-        _daemon: Arc<dyn Daemon + Sync + Send>,
+        _daemon: Arc<liana_gui::daemon::AnyDaemon>,
         _daemon_backend: DaemonBackend,
         _internal_bitcoind: bool,
         _config: Arc<Config>,
@@ -64,7 +64,7 @@ impl SettingsUI<Msg> for BusinessSettingsUI {
 
     fn update(
         &mut self,
-        _daemon: Arc<dyn Daemon + Sync + Send>,
+        _daemon: Arc<liana_gui::daemon::AnyDaemon>,
         _cache: &Cache,
         message: Msg,
     ) -> Task<Msg> {
@@ -100,7 +100,11 @@ impl SettingsUI<Msg> for BusinessSettingsUI {
         self.register_modal = None;
     }
 
-    fn reload(&mut self, _daemon: Arc<dyn Daemon + Sync + Send>, wallet: Arc<Wallet>) -> Task<Msg> {
+    fn reload(
+        &mut self,
+        _daemon: Arc<liana_gui::daemon::AnyDaemon>,
+        wallet: Arc<Wallet>,
+    ) -> Task<Msg> {
         self.current_section = None;
         self.fiat_setting = wallet_fiat_setting_or_default(&wallet);
         self.wallet = wallet;
@@ -115,7 +119,7 @@ impl BusinessSettingsUI {
         Task::none()
     }
 
-    fn save_fiat_setting(&self, daemon: Arc<dyn Daemon + Sync + Send>) -> Task<Message> {
+    fn save_fiat_setting(&self, daemon: Arc<liana_gui::daemon::AnyDaemon>) -> Task<Message> {
         let wallet = self.wallet.clone();
         let setting = self.fiat_setting.clone();
 
@@ -188,7 +192,7 @@ impl State for BusinessSettingsUI {
 
     fn update(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<liana_gui::daemon::AnyDaemon>,
         cache: &Cache,
         message: Message,
     ) -> Task<Message> {
@@ -268,7 +272,7 @@ impl State for BusinessSettingsUI {
 
     fn reload(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<liana_gui::daemon::AnyDaemon>,
         wallet: Arc<Wallet>,
     ) -> Task<Message> {
         self.register_modal = None;

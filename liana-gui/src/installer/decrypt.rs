@@ -2,10 +2,9 @@ use std::{
     collections::{BTreeMap, HashSet},
     fmt::Debug,
     str::FromStr,
-    sync::Arc,
 };
 
-use async_hwi::{bitbox::api::btc::Fingerprint, DeviceKind, Version, HWI};
+use bwk_hwi::{bitbox::api::btc::Fingerprint, DeviceKind, Version};
 use encrypted_backup::{Decrypted, EncryptedBackup};
 use iced::{
     alignment::{self, Horizontal},
@@ -41,7 +40,7 @@ use crate::{
     app::state::export::ExportModal,
     backup::Backup,
     export::ImportExportType,
-    hw::{HardwareWallet, HardwareWallets},
+    hw::{AsyncDevice, HardwareWallet, HardwareWallets},
     installer,
     utils::default_derivation_path,
 };
@@ -216,7 +215,7 @@ impl DecryptModal {
                 Task::none()
             }
             Decrypt::Backup(_) => {
-                tracing::error!(
+                log::error!(
                     "DecryptModal::update(Backup), this message must have been caught early"
                 );
                 Task::none()
@@ -238,11 +237,11 @@ impl DecryptModal {
             }
             Decrypt::UnexpectedPayload(p) => match p {
                 Decrypted::Descriptor(_) => {
-                    tracing::error!("Descriptor decrypted but not a valid liana descriptor");
+                    log::error!("Descriptor decrypted but not a valid liana descriptor");
                     Task::done(Decrypt::InvalidDescriptor.into())
                 }
                 _ => {
-                    tracing::error!("Content decrypted but type not supported");
+                    log::error!("Content decrypted but type not supported");
                     Task::done(Decrypt::ContentNotSupported.into())
                 }
             },
@@ -281,7 +280,7 @@ impl DecryptModal {
             Decrypt::SelectImportXpub => {
                 self.focus = Focus::ImportXpub;
                 self.import_xpub_error = None;
-                let modal = ExportModal::new(None, ImportExportType::ImportXpub(self.network));
+                let mut modal = ExportModal::new(None, ImportExportType::ImportXpub(self.network));
                 let launch = modal.launch(false);
                 self.modal = Some(modal);
                 launch
@@ -314,7 +313,7 @@ impl DecryptModal {
     #[allow(clippy::collapsible_match)]
     fn fetch(
         &self,
-        device: Arc<dyn HWI + Send + Sync>,
+        device: AsyncDevice,
         fingerprint: Fingerprint,
         name: String,
     ) -> Task<installer::Message> {
@@ -332,7 +331,7 @@ impl DecryptModal {
                         }
                     } else {
                         // FIXME: should we retry here?
-                        tracing::error!(
+                        log::error!(
                             "Fail to fetch xpub for {} {}",
                             device.device_kind(),
                             fingerprint

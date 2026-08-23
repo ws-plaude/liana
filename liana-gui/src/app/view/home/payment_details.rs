@@ -1,4 +1,3 @@
-use chrono::{DateTime, Local, Utc};
 use std::{collections::HashMap, vec};
 
 use iced::{
@@ -14,7 +13,7 @@ use liana_ui::{
         card, form,
         text::{legacy, Text},
     },
-    theme,
+    date, theme,
     widget::{Column, ColumnExt, Element, SpaceExt},
 };
 
@@ -123,17 +122,11 @@ pub fn payment_details_view<'a>(
             .push(card::simple(
                 Column::new()
                     .push_maybe(tx.time.map(|t| {
-                        let date = DateTime::<Utc>::from_timestamp(t as i64, 0)
-                            .unwrap()
-                            .with_timezone(&Local)
-                            .format("%b. %d, %Y - %T");
+                        let date = date::format_date_time(t as i64);
                         Row::new()
                             .width(Length::Fill)
                             .push(Container::new(legacy::text("Date:").bold()).width(Length::Fill))
-                            .push(
-                                Container::new(legacy::text(format!("{date}")))
-                                    .width(Length::Shrink),
-                            )
+                            .push(Container::new(legacy::text(date)).width(Length::Shrink))
                     }))
                     .push(
                         Row::new()

@@ -212,7 +212,7 @@ impl LianaLiteLogin {
                             // Whatever the error with current auth,
                             // user is redirected to do the authentication steps.
                             self.step = ConnectionStep::CheckEmail;
-                            tracing::warn!("Error while checking email: {}", e);
+                            log::warn!("Error while checking email: {e}");
                             match e {
                                 Error::CredentialsMissing => {
                                     // Liana-Connect cache does not exist,
@@ -246,15 +246,7 @@ impl LianaLiteLogin {
                         async move {
                             let config = super::client::get_service_config(network, backend_type)
                                 .await
-                                .map_err(|e| {
-                                    if e.status() == Some(reqwest::StatusCode::NOT_FOUND) {
-                                        Error::Unexpected(
-                                            "Remote servers are unresponsive".to_string(),
-                                        )
-                                    } else {
-                                        Error::Unexpected(e.to_string())
-                                    }
-                                })?;
+                                .map_err(|e| Error::Unexpected(e.to_string()))?;
                             let client = AuthClient::new(
                                 config.auth_api_url,
                                 config.auth_api_public_key,
@@ -308,7 +300,7 @@ impl LianaLiteLogin {
                         self.processing = false;
                     }
                     Err(e) => {
-                        tracing::warn!("{}", e);
+                        log::warn!("{e}");
                         self.processing = false;
                         self.connection_error = Some(e);
                     }
@@ -356,7 +348,7 @@ impl LianaLiteLogin {
                             );
                         }
                         Err(e) => {
-                            tracing::warn!("{}", e);
+                            log::warn!("{e}");
                             if let Error::Auth(AuthError { http_status, .. }) = e {
                                 if http_status == Some(403) {
                                     self.auth_error = Some("Token is expired or is invalid")
@@ -508,7 +500,7 @@ pub async fn connect(
     )
     .await
     {
-        tracing::warn!("Failed to stamp user_id on Liana-Connect cache: {}", e);
+        log::warn!("Failed to stamp user_id on Liana-Connect cache: {e}");
     }
 
     let wallets = client.list_wallets().await?;
@@ -519,7 +511,10 @@ pub async fn connect(
     if connect_wallet_id.is_empty() {
         let first = wallets.first().cloned().ok_or(DaemonError::NoAnswer)?;
         let (wallet_client, wallet) = client.connect_wallet(first);
-        let coins = coins_to_cache(Arc::new(wallet_client.clone())).await?;
+        let coins = coins_to_cache(Arc::new(crate::daemon::AnyDaemon::Backend(Box::new(
+            wallet_client.clone(),
+        ))))
+        .await?;
         let settings = wallet_client.get_wallet_settings().await?;
 
         Ok(BackendState::WalletExists(
@@ -539,11 +534,14 @@ pub async fn connect(
         )
         .await
         {
-            tracing::warn!("Failed to update settings.json after OTP: {}", e);
+            log::warn!("Failed to update settings.json after OTP: {e}");
         }
 
         let (wallet_client, wallet) = client.connect_wallet(wallet);
-        let coins = coins_to_cache(Arc::new(wallet_client.clone())).await?;
+        let coins = coins_to_cache(Arc::new(crate::daemon::AnyDaemon::Backend(Box::new(
+            wallet_client.clone(),
+        ))))
+        .await?;
         let settings = wallet_client.get_wallet_settings().await?;
 
         Ok(BackendState::WalletExists(
@@ -577,7 +575,7 @@ pub async fn connect_with_credentials(
 
     let mut tokens = cached.tokens;
 
-    if tokens.expires_at < chrono::Utc::now().timestamp() {
+    if tokens.expires_at < crate::utils::now().as_secs() as i64 {
         tokens = cache::update_connect_cache(
             network_dir,
             &tokens,
@@ -602,7 +600,10 @@ pub async fn connect_with_credentials(
         backfill_local_link(network_dir, &client, &auth_cfg).await?;
 
         let (wallet_client, wallet) = client.connect_wallet(wallet);
-        let coins = coins_to_cache(Arc::new(wallet_client.clone())).await?;
+        let coins = coins_to_cache(Arc::new(crate::daemon::AnyDaemon::Backend(Box::new(
+            wallet_client.clone(),
+        ))))
+        .await?;
         let settings = wallet_client.get_wallet_settings().await?;
         Ok(BackendState::WalletExists(
             wallet_client,

@@ -26,10 +26,12 @@ liana = { path = "../liana" }
 miniscript = { workspace = true, features = ["serde", "compiler", "base64"] }
 
 # For Electrum backend.
-bdk_electrum = { workspace = true, default-features = false, features = [ "use-rustls-ring" ] }
+bwk-coin = { workspace = true }
+bwk-descriptor = { workspace = true }
+bwk-electrum = { workspace = true }
+bwk-persist = { workspace = true }
 
 # Don't reinvent the wheel
-dirs = { workspace = true }
 
 # We use TOML for the config, and JSON for RPC
 serde = { workspace = true, features = ["derive"] }
@@ -43,12 +45,11 @@ fern = { workspace = true }
 # In order to have a backtrace on panic, because the
 # stdlib does not have a programmatic interface yet
 # to work with our custom panic hook.
-backtrace = { workspace = true }
 
 rusqlite = { workspace = true, features = ["bundled", "unlock_notify"] }
 
 # To talk to bitcoind
-jsonrpc = { workspace = true, features = ["minreq_http"], default-features = false }
+jsonrpc = { workspace = true, features = ["simple_http"], default-features = false }
 
 # import/export labels
 bip329 = { workspace = true, default-features = false }

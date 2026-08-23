@@ -1,3 +1,4 @@
+pub mod context_menu;
 mod copy_button;
 mod cursor;
 mod editor;
@@ -19,6 +20,8 @@ pub type Stack<'a, Message> = iced::widget::Stack<'a, Message, Theme, Renderer>;
 pub type Button<'a, Message> = iced::widget::Button<'a, Message, Theme, Renderer>;
 pub type BistateButton<'a, Message> = copy_button::BistateButton<'a, Message, Theme, Renderer>;
 pub type MenuButton<'a, Message> = menu_button::MenuButton<'a, Message, Theme, Renderer>;
+pub type ContextMenu<'a, Overlay, Message> =
+    context_menu::ContextMenu<'a, Overlay, Message, Theme, Renderer>;
 pub type CheckBox<'a, Message> = iced::widget::Checkbox<'a, Message, Theme, Renderer>;
 pub type Radio<'a, Message> = iced::widget::Radio<'a, Message, Theme, Renderer>;
 pub type Text<'a> = iced::widget::Text<'a, Theme, Renderer>;
@@ -29,7 +32,7 @@ pub type ProgressBar<'a> = iced::widget::ProgressBar<'a, Theme>;
 pub type PickList<'a, T, L, V, Message> =
     iced::widget::PickList<'a, T, L, V, Message, Theme, Renderer>;
 pub type Scrollable<'a, Message> = iced::widget::Scrollable<'a, Message, Theme, Renderer>;
-pub type Svg<'a> = iced::widget::Svg<'a, Theme>;
+pub type Image = iced::widget::Image<iced::widget::image::Handle>;
 
 /// Extension trait to restore `push_maybe` for `Column`, removed in iced 0.14.
 pub trait ColumnExt<'a, Message> {

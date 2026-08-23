@@ -6,7 +6,7 @@ Implement a Registration step in WalletStatus flow where participants register t
 
 ## User Decisions
 
-- Use `async-hwi::register_wallet` for device registration
+- Use `bwk-hwi::register_wallet` for device registration
 - Proof of registration: HMAC (hex string) for Ledger only, None for others
 - Users with no devices to register: show waiting screen
 - New `View::Registration` variant (separate from WalletEdit)
@@ -284,7 +284,7 @@ Server -> Client: Response::Wallet {
 // Client detects device via HwiService, matches fingerprint to registered_devices
 
 // Step 3: User initiates registration on device
-// Client calls async-hwi register_wallet() which prompts user to confirm on device
+// Client calls bwk-hwi register_wallet() which prompts user to confirm on device
 
 // Step 4: After successful registration, client reports to server
 Client -> Server: Request::DeviceRegistered {

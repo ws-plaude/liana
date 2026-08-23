@@ -1,5 +1,4 @@
 use iced::{Length, Subscription, Task};
-use iced_aw::ContextMenu;
 use liana_ui::{component::text::*, icon::plus_icon, theme, widget::*};
 use std::marker::PhantomData;
 

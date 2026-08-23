@@ -4,15 +4,17 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpListener};
 use std::path::PathBuf;
 use std::str::FromStr;
 
-use bitcoin_hashes::{sha256, Hash};
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 use flate2::read::GzDecoder;
 use iced::{Subscription, Task};
-use liana::miniscript::bitcoin::Network;
+use liana::miniscript::bitcoin::{
+    hashes::{sha256, Hash},
+    Network,
+};
 use lianad::config::{BitcoinBackend, BitcoindConfig, BitcoindRpcAuth};
+use log::info;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 use tar::Archive;
-use tracing::info;
 
 use jsonrpc::{client::Client, simple_http::SimpleHttpTransport};
 
@@ -193,7 +195,7 @@ fn unpack_bitcoind(install_dir: &PathBuf, bytes: &[u8]) -> Result<(), InstallBit
 /// Verify the download hash against the expected value.
 fn verify_hash(bytes: &[u8]) -> bool {
     let bytes_hash = sha256::Hash::hash(bytes);
-    info!("Download hash: '{}'.", bytes_hash);
+    info!("Download hash: '{bytes_hash}'.");
     let expected_hash = sha256::Hash::from_str(bitcoind::SHA256SUM).expect("This cannot fail.");
     expected_hash == bytes_hash
 }
@@ -212,13 +214,7 @@ fn internal_bitcoind_address(rpc_port: u16) -> SocketAddr {
 }
 
 fn bitcoind_default_datadir() -> Option<PathBuf> {
-    #[cfg(target_os = "linux")]
-    let configs_dir = dirs::home_dir();
-
-    #[cfg(not(target_os = "linux"))]
-    let configs_dir = dirs::config_dir();
-
-    if let Some(mut path) = configs_dir {
+    if let Some(mut path) = lianad::config::base_config_dir() {
         #[cfg(target_os = "linux")]
         path.push(".bitcoin");
 
@@ -248,7 +244,6 @@ fn bitcoind_default_address(network: &Network) -> String {
         Network::Testnet4 => "127.0.0.1:48332".to_string(),
         Network::Regtest => "127.0.0.1:18443".to_string(),
         Network::Signet => "127.0.0.1:38332".to_string(),
-        _ => "127.0.0.1:8332".to_string(),
     }
 }
 

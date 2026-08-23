@@ -5,7 +5,7 @@ use crate::{
     state::{message::Msg, State},
     views::{intro_description, layout_with_scrollable_list, screen_intro},
 };
-use async_hwi::service::{is_compatible_with_tapminiscript, SigningDevice};
+use bwk_hwi::service::{is_compatible_with_tapminiscript, SigningDevice};
 use iced::{
     widget::{column, row, Space},
     Alignment, Length,
@@ -147,7 +147,7 @@ fn device_list_view(state: &State) -> Element<'_, Msg> {
     cards.into()
 }
 
-fn device_kind(kind: async_hwi::DeviceKind) -> String {
+fn device_kind(kind: bwk_hwi::DeviceKind) -> String {
     let binding = kind.to_string();
     let mut chars = binding.chars();
     match chars.next() {
@@ -158,7 +158,7 @@ fn device_kind(kind: async_hwi::DeviceKind) -> String {
 
 pub fn registration_key_entry(
     fingerprint: Fingerprint,
-    kind: Option<async_hwi::DeviceKind>,
+    kind: Option<bwk_hwi::DeviceKind>,
     device_connected: bool,
     done: bool,
     alias: String,

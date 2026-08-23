@@ -1,6 +1,6 @@
 pub mod editor;
 
-use async_hwi::utils::extract_keys_and_template;
+use bwk_hwi::utils::extract_keys_and_template;
 use iced::{
     alignment,
     widget::{checkbox, column, progress_bar, radio, row, tooltip, Button, Space, TextInput},

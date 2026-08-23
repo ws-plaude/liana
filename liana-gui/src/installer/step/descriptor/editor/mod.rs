@@ -165,7 +165,7 @@ impl DefineDescriptor {
                 if let Some(k) = key {
                     let fg = k.fingerprint;
                     if !keys.contains_key(&fg) {
-                        tracing::error!("DefineDesctriptor::keys() key {} missing", fg);
+                        log::error!("DefineDesctriptor::keys() key {fg} missing");
                     } else {
                         let entry = keys.get_mut(&fg).expect("checked");
                         entry.0.push((i, j));
@@ -258,7 +258,7 @@ impl Step for DefineDescriptor {
                     key::SelectedKey::Existing(fingerprint) => {
                         if let Some(existing_key) = self.keys.get(&fingerprint) {
                             if !self.keys.contains_key(&fingerprint) {
-                                tracing::error!("Key {fingerprint} does not exists");
+                                log::error!("Key {fingerprint} does not exists");
                                 return Task::none();
                             }
                             for coordinate in coordinates {
@@ -269,7 +269,7 @@ impl Step for DefineDescriptor {
                                     self.paths[coordinate.0].keys[coordinate.1] =
                                         Some(existing_key.clone());
                                 } else {
-                                    tracing::error!(
+                                    log::error!(
                                         "Key {fingerprint} already in path {}",
                                         coordinate.0
                                     );
@@ -277,7 +277,7 @@ impl Step for DefineDescriptor {
                             }
                             self.check_setup();
                         } else {
-                            tracing::error!("Key with fingerprint {fingerprint} does not exists");
+                            log::error!("Key with fingerprint {fingerprint} does not exists");
                         }
                         self.modal = None;
                     }
@@ -286,7 +286,7 @@ impl Step for DefineDescriptor {
                             self.accounts.insert(key.fingerprint, acc);
                         }
                         if self.keys.contains_key(&key.fingerprint) {
-                            tracing::error!("Key {} already exists", key.fingerprint);
+                            log::error!("Key {} already exists", key.fingerprint);
                         }
                         self.keys.insert(key.fingerprint, *key.clone());
                         hws.aliases.insert(key.fingerprint, key.name.clone());
@@ -294,7 +294,7 @@ impl Step for DefineDescriptor {
                             if !self.paths[coordinate.0].keys.contains(&Some(*key.clone())) {
                                 self.paths[coordinate.0].keys[coordinate.1] = Some(*key.clone());
                             } else {
-                                tracing::error!(
+                                log::error!(
                                     "Key {} already in path {}",
                                     key.fingerprint,
                                     coordinate.0
@@ -799,6 +799,7 @@ impl DescriptorEditModal for EditThresholdModal {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use futures::executor::block_on;
     use iced::futures::StreamExt;
     use iced_runtime::{task::into_stream, Action};
     use std::path::PathBuf;
@@ -878,185 +879,189 @@ mod tests {
         sandbox.check_apply(ctx)
     }
 
-    #[tokio::test]
-    async fn test_define_descriptor_use_hotkey() {
-        let mut ctx = Context::new(
-            Network::Signet,
-            LianaDirectory::new(PathBuf::from_str("/").unwrap()),
-            crate::installer::context::RemoteBackend::None,
-        );
-        let sandbox: Sandbox<DefineDescriptor> = Sandbox::new(DefineDescriptor::new(
-            Network::Signet,
-            Arc::new(Mutex::new(Signer::generate(Network::Bitcoin).unwrap())),
-        ));
-        sandbox.load(&ctx).await;
+    #[test]
+    fn test_define_descriptor_use_hotkey() {
+        block_on(async {
+            let mut ctx = Context::new(
+                Network::Signet,
+                LianaDirectory::new(PathBuf::from_str("/").unwrap()),
+                crate::installer::context::RemoteBackend::None,
+            );
+            let sandbox: Sandbox<DefineDescriptor> = Sandbox::new(DefineDescriptor::new(
+                Network::Signet,
+                Arc::new(Mutex::new(Signer::generate(Network::Bitcoin).unwrap())),
+            ));
+            sandbox.load(&ctx).await;
 
-        // Edit primary key
-        sandbox
-            .update(Message::DefineDescriptor(message::DefineDescriptor::Path(
-                0,
-                message::DefinePath::Key(0, message::DefineKey::Edit),
-            )))
-            .await;
-        sandbox.check(|step| assert!(step.modal.is_some()));
-        sandbox
-            .update(SelectKeySource::route(
-                key::SelectKeySourceMessage::SelectGenerateHotKey,
-            ))
-            .await;
-        sandbox
-            .update(SelectKeySource::route(key::SelectKeySourceMessage::Alias(
-                "hot_signer_key".to_string(),
-            )))
-            .await;
-        sandbox
-            .update(SelectKeySource::route(key::SelectKeySourceMessage::Next))
-            .await;
-        sandbox.check(|step| assert!(step.modal.is_none()));
+            // Edit primary key
+            sandbox
+                .update(Message::DefineDescriptor(message::DefineDescriptor::Path(
+                    0,
+                    message::DefinePath::Key(0, message::DefineKey::Edit),
+                )))
+                .await;
+            sandbox.check(|step| assert!(step.modal.is_some()));
+            sandbox
+                .update(SelectKeySource::route(
+                    key::SelectKeySourceMessage::SelectGenerateHotKey,
+                ))
+                .await;
+            sandbox
+                .update(SelectKeySource::route(key::SelectKeySourceMessage::Alias(
+                    "hot_signer_key".to_string(),
+                )))
+                .await;
+            sandbox
+                .update(SelectKeySource::route(key::SelectKeySourceMessage::Next))
+                .await;
+            sandbox.check(|step| assert!(step.modal.is_none()));
 
-        // Edit sequence
-        sandbox
-            .update(Message::DefineDescriptor(message::DefineDescriptor::Path(
-                1,
-                message::DefinePath::SequenceEdited(1000),
-            )))
-            .await;
+            // Edit sequence
+            sandbox
+                .update(Message::DefineDescriptor(message::DefineDescriptor::Path(
+                    1,
+                    message::DefinePath::SequenceEdited(1000),
+                )))
+                .await;
 
-        // Edit recovery key
-        sandbox
-            .update(Message::DefineDescriptor(message::DefineDescriptor::Path(
-                1,
-                message::DefinePath::Key(0, message::DefineKey::Edit),
-            )))
-            .await;
-        sandbox.check(|step| assert!(step.modal.is_some()));
-        sandbox
-            .update(SelectKeySource::route(
-                key::SelectKeySourceMessage::SelectEnterXpub,
-            ))
-            .await;
-        sandbox
-            .update(SelectKeySource::route(
-                key::SelectKeySourceMessage::Xpub("[f5acc2fd/48'/1'/0'/2']tpubDFAqEGNyad35aBCKUAXbQGDjdVhNueno5ZZVEn3sQbW5ci457gLR7HyTmHBg93oourBssgUxuWz1jX5uhc1qaqFo9VsybY1J5FuedLfm4dK".to_string())
-            ))
-            .await;
-        sandbox
-            .update(SelectKeySource::route(key::SelectKeySourceMessage::Alias(
-                "External recovery key".to_string(),
-            )))
-            .await;
-        sandbox
-            .update(SelectKeySource::route(key::SelectKeySourceMessage::Next))
-            .await;
-        sandbox.check(|step| assert!(step.modal.is_none()));
-        assert!(run_apply(&sandbox, &mut ctx).await);
-        sandbox.check(|step| {
-            assert!(ctx
-                .descriptor
-                .as_ref()
-                .unwrap()
-                .to_string()
-                .contains(&step.signer.lock().unwrap().fingerprint().to_string()));
+            // Edit recovery key
+            sandbox
+                .update(Message::DefineDescriptor(message::DefineDescriptor::Path(
+                    1,
+                    message::DefinePath::Key(0, message::DefineKey::Edit),
+                )))
+                .await;
+            sandbox.check(|step| assert!(step.modal.is_some()));
+            sandbox
+                .update(SelectKeySource::route(
+                    key::SelectKeySourceMessage::SelectEnterXpub,
+                ))
+                .await;
+            sandbox
+                .update(SelectKeySource::route(
+                    key::SelectKeySourceMessage::Xpub("[f5acc2fd/48'/1'/0'/2']tpubDFAqEGNyad35aBCKUAXbQGDjdVhNueno5ZZVEn3sQbW5ci457gLR7HyTmHBg93oourBssgUxuWz1jX5uhc1qaqFo9VsybY1J5FuedLfm4dK".to_string())
+                ))
+                .await;
+            sandbox
+                .update(SelectKeySource::route(key::SelectKeySourceMessage::Alias(
+                    "External recovery key".to_string(),
+                )))
+                .await;
+            sandbox
+                .update(SelectKeySource::route(key::SelectKeySourceMessage::Next))
+                .await;
+            sandbox.check(|step| assert!(step.modal.is_none()));
+            assert!(run_apply(&sandbox, &mut ctx).await);
+            sandbox.check(|step| {
+                assert!(ctx
+                    .descriptor
+                    .as_ref()
+                    .unwrap()
+                    .to_string()
+                    .contains(&step.signer.lock().unwrap().fingerprint().to_string()));
+            });
         });
     }
 
-    #[tokio::test]
-    async fn test_define_descriptor_stores_if_hw_is_used() {
-        let mut ctx = Context::new(
-            Network::Testnet,
-            LianaDirectory::new(PathBuf::from_str("/").unwrap()),
-            crate::installer::context::RemoteBackend::None,
-        );
-        let sandbox: Sandbox<DefineDescriptor> = Sandbox::new(DefineDescriptor::new(
-            Network::Testnet,
-            Arc::new(Mutex::new(Signer::generate(Network::Testnet).unwrap())),
-        ));
-        sandbox.load(&ctx).await;
+    #[test]
+    fn test_define_descriptor_stores_if_hw_is_used() {
+        block_on(async {
+            let mut ctx = Context::new(
+                Network::Testnet,
+                LianaDirectory::new(PathBuf::from_str("/").unwrap()),
+                crate::installer::context::RemoteBackend::None,
+            );
+            let sandbox: Sandbox<DefineDescriptor> = Sandbox::new(DefineDescriptor::new(
+                Network::Testnet,
+                Arc::new(Mutex::new(Signer::generate(Network::Testnet).unwrap())),
+            ));
+            sandbox.load(&ctx).await;
 
-        let key = DescriptorPublicKey::from_str("[4df3f0e3/84'/0'/0']tpubDDRs9DnRUiJc4hq92PSJKhfzQBgHJUrDo7T2i48smsDfLsQcm3Vh7JhuGqJv8zozVkNFin8YPgpmn2NWNmpRaE3GW2pSxbmAzYf2juy7LeW").unwrap();
-        let specter_key = Key {
-            name: "My Specter key".to_string(),
-            fingerprint: key.master_fingerprint(),
-            key,
-            source: KeySource::Device(async_hwi::DeviceKind::Specter, None),
-            account: None,
-        };
+            let key = DescriptorPublicKey::from_str("[4df3f0e3/84'/0'/0']tpubDDRs9DnRUiJc4hq92PSJKhfzQBgHJUrDo7T2i48smsDfLsQcm3Vh7JhuGqJv8zozVkNFin8YPgpmn2NWNmpRaE3GW2pSxbmAzYf2juy7LeW").unwrap();
+            let specter_key = Key {
+                name: "My Specter key".to_string(),
+                fingerprint: key.master_fingerprint(),
+                key,
+                source: KeySource::Device(bwk_hwi::DeviceKind::Specter, None),
+                account: None,
+            };
 
-        // Use Specter device for primary key
-        sandbox
-            .update(Message::DefineDescriptor(
-                message::DefineDescriptor::KeysEdited(
-                    vec![(0, 0)],
-                    SelectedKey::New(Box::new(specter_key.clone())),
-                ),
-            ))
-            .await;
+            // Use Specter device for primary key
+            sandbox
+                .update(Message::DefineDescriptor(
+                    message::DefineDescriptor::KeysEdited(
+                        vec![(0, 0)],
+                        SelectedKey::New(Box::new(specter_key.clone())),
+                    ),
+                ))
+                .await;
 
-        // Edit recovery key
-        sandbox
-            .update(Message::DefineDescriptor(message::DefineDescriptor::Path(
-                1,
-                message::DefinePath::Key(0, message::DefineKey::Edit),
-            )))
-            .await;
-        sandbox.check(|step| assert!(step.modal.is_some()));
-        sandbox
-            .update(SelectKeySource::route(
-                key::SelectKeySourceMessage::SelectEnterXpub,
-            ))
-            .await;
-        sandbox
-            .update(SelectKeySource::route(
-                key::SelectKeySourceMessage::Xpub("[f5acc2fd/48'/1'/0'/2']tpubDFAqEGNyad35aBCKUAXbQGDjdVhNueno5ZZVEn3sQbW5ci457gLR7HyTmHBg93oourBssgUxuWz1jX5uhc1qaqFo9VsybY1J5FuedLfm4dK".to_string())
-            ))
-            .await;
-        sandbox
-            .update(SelectKeySource::route(key::SelectKeySourceMessage::Alias(
-                "External recovery key".to_string(),
-            )))
-            .await;
-        sandbox
-            .update(SelectKeySource::route(key::SelectKeySourceMessage::Next))
-            .await;
-        sandbox.check(|step| assert!(step.modal.is_none()));
-        assert!(run_apply(&sandbox, &mut ctx).await);
-        assert!(ctx.hw_is_used);
+            // Edit recovery key
+            sandbox
+                .update(Message::DefineDescriptor(message::DefineDescriptor::Path(
+                    1,
+                    message::DefinePath::Key(0, message::DefineKey::Edit),
+                )))
+                .await;
+            sandbox.check(|step| assert!(step.modal.is_some()));
+            sandbox
+                .update(SelectKeySource::route(
+                    key::SelectKeySourceMessage::SelectEnterXpub,
+                ))
+                .await;
+            sandbox
+                .update(SelectKeySource::route(
+                    key::SelectKeySourceMessage::Xpub("[f5acc2fd/48'/1'/0'/2']tpubDFAqEGNyad35aBCKUAXbQGDjdVhNueno5ZZVEn3sQbW5ci457gLR7HyTmHBg93oourBssgUxuWz1jX5uhc1qaqFo9VsybY1J5FuedLfm4dK".to_string())
+                ))
+                .await;
+            sandbox
+                .update(SelectKeySource::route(key::SelectKeySourceMessage::Alias(
+                    "External recovery key".to_string(),
+                )))
+                .await;
+            sandbox
+                .update(SelectKeySource::route(key::SelectKeySourceMessage::Next))
+                .await;
+            sandbox.check(|step| assert!(step.modal.is_none()));
+            assert!(run_apply(&sandbox, &mut ctx).await);
+            assert!(ctx.hw_is_used);
 
-        // Now edit primary key to use hot signer instead of Specter device
-        sandbox
-            .update(Message::DefineDescriptor(message::DefineDescriptor::Path(
-                0,
-                message::DefinePath::Key(0, message::DefineKey::Edit),
-            )))
-            .await;
-        sandbox.check(|step| assert!(step.modal.is_some()));
-        sandbox
-            .update(SelectKeySource::route(
-                key::SelectKeySourceMessage::SelectGenerateHotKey,
-            ))
-            .await;
-        sandbox
-            .update(SelectKeySource::route(key::SelectKeySourceMessage::Alias(
-                "hot signer key".to_string(),
-            )))
-            .await;
-        sandbox
-            .update(SelectKeySource::route(key::SelectKeySourceMessage::Next))
-            .await;
-        sandbox.check(|step| assert!(step.modal.is_none()));
-        assert!(run_apply(&sandbox, &mut ctx).await);
-        assert!(!ctx.hw_is_used);
+            // Now edit primary key to use hot signer instead of Specter device
+            sandbox
+                .update(Message::DefineDescriptor(message::DefineDescriptor::Path(
+                    0,
+                    message::DefinePath::Key(0, message::DefineKey::Edit),
+                )))
+                .await;
+            sandbox.check(|step| assert!(step.modal.is_some()));
+            sandbox
+                .update(SelectKeySource::route(
+                    key::SelectKeySourceMessage::SelectGenerateHotKey,
+                ))
+                .await;
+            sandbox
+                .update(SelectKeySource::route(key::SelectKeySourceMessage::Alias(
+                    "hot signer key".to_string(),
+                )))
+                .await;
+            sandbox
+                .update(SelectKeySource::route(key::SelectKeySourceMessage::Next))
+                .await;
+            sandbox.check(|step| assert!(step.modal.is_none()));
+            assert!(run_apply(&sandbox, &mut ctx).await);
+            assert!(!ctx.hw_is_used);
 
-        // Now edit the recovery key to use Specter device
-        sandbox
-            .update(Message::DefineDescriptor(
-                message::DefineDescriptor::KeysEdited(
-                    vec![(1, 0)],
-                    SelectedKey::New(Box::new(specter_key.clone())),
-                ),
-            ))
-            .await;
-        assert!(run_apply(&sandbox, &mut ctx).await);
-        assert!(ctx.hw_is_used);
+            // Now edit the recovery key to use Specter device
+            sandbox
+                .update(Message::DefineDescriptor(
+                    message::DefineDescriptor::KeysEdited(
+                        vec![(1, 0)],
+                        SelectedKey::New(Box::new(specter_key.clone())),
+                    ),
+                ))
+                .await;
+            assert!(run_apply(&sandbox, &mut ctx).await);
+            assert!(ctx.hw_is_used);
+        });
     }
 }

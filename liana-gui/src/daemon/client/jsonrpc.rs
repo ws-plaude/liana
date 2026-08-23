@@ -36,7 +36,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Deserializer;
 
 #[cfg(not(windows))]
-use tracing::debug;
+use log::debug;
 
 /// A handle to a remote JSONRPC server
 #[derive(Debug, Clone)]
@@ -102,7 +102,7 @@ impl JsonRPCClient {
             jsonrpc: "2.0",
         };
 
-        debug!("Sending to lianad: {:#?}", request);
+        debug!("Sending to lianad: {request:#?}");
 
         stream.write_all(&[serde_json::to_string(&request).unwrap().as_bytes(), b"\n"].concat())?;
 
@@ -122,7 +122,7 @@ impl JsonRPCClient {
             return Err(Error::NonceMismatch);
         }
 
-        debug!("Received from lianad: {:#?}", response);
+        debug!("Received from lianad: {response:#?}");
 
         Ok(response)
     }

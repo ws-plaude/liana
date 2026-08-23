@@ -20,7 +20,7 @@ use crate::{
         view,
         wallet::Wallet,
     },
-    hw::{HardwareWallet, HardwareWallets},
+    hw::{AsyncDevice, HardwareWallet, HardwareWallets},
 };
 
 use crate::daemon::{
@@ -159,7 +159,7 @@ impl State for ReceivePanel {
 
     fn update(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         cache: &Cache,
         message: Message,
     ) -> Task<Message> {
@@ -253,10 +253,7 @@ impl State for ReceivePanel {
                                 )]);
                                 if let Err(e) = daemon.update_labels(&updates).await {
                                     // FIXME: should we add a retry or error mechanism here?
-                                    tracing::warn!(
-                                        "failed to store label for {}: {e}",
-                                        res.address
-                                    );
+                                    log::warn!("failed to store label for {}: {e}", res.address);
                                 }
                                 Ok((res.address, res.derivation_index))
                             },
@@ -443,7 +440,7 @@ impl State for ReceivePanel {
 
     fn reload(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         wallet: Arc<Wallet>,
     ) -> Task<Message> {
         let data_dir = self.data_dir.clone();
@@ -513,7 +510,7 @@ impl VerifyAddressModal {
 
     fn update(
         &mut self,
-        _daemon: Arc<dyn Daemon + Sync + Send>,
+        _daemon: Arc<crate::daemon::AnyDaemon>,
         _cache: &Cache,
         message: Message,
     ) -> Task<Message> {
@@ -741,11 +738,8 @@ impl NewAddressModal {
     }
 }
 
-async fn verify_address(
-    hw: std::sync::Arc<dyn async_hwi::HWI + Send + Sync>,
-    index: ChildNumber,
-) -> Result<(), Error> {
-    hw.display_address(&async_hwi::AddressScript::Miniscript {
+async fn verify_address(hw: AsyncDevice, index: ChildNumber) -> Result<(), Error> {
+    hw.display_address(&bwk_hwi::AddressScript::Miniscript {
         change: false,
         index: index.into(),
     })
@@ -765,92 +759,95 @@ mod tests {
         utils::{mock::Daemon, sandbox::Sandbox},
     };
 
+    use futures::executor::block_on;
     use liana::{descriptors::LianaDescriptor, miniscript::bitcoin::secp256k1};
     use serde_json::json;
     use std::{path::PathBuf, str::FromStr};
 
     const DESC: &str = "wsh(or_d(multi(2,[ffd63c8d/48'/1'/0'/2']tpubDExA3EC3iAsPxPhFn4j6gMiVup6V2eH3qKyk69RcTc9TTNRfFYVPad8bJD5FCHVQxyBT4izKsvr7Btd2R4xmQ1hZkvsqGBaeE82J71uTK4N/<0;1>/*,[de6eb005/48'/1'/0'/2']tpubDFGuYfS2JwiUSEXiQuNGdT3R7WTDhbaE6jbUhgYSSdhmfQcSx7ZntMPPv7nrkvAqjpj3jX9wbhSGMeKVao4qAzhbNyBi7iQmv5xxQk6H6jz/<0;1>/*),and_v(v:pkh([ffd63c8d/48'/1'/0'/2']tpubDExA3EC3iAsPxPhFn4j6gMiVup6V2eH3qKyk69RcTc9TTNRfFYVPad8bJD5FCHVQxyBT4izKsvr7Btd2R4xmQ1hZkvsqGBaeE82J71uTK4N/<2;3>/*),older(3))))#p9ax3xxp";
 
-    #[tokio::test]
-    async fn test_receive_panel() {
-        let wallet = Arc::new(Wallet::new(LianaDescriptor::from_str(DESC).unwrap()));
-        // The reveal returns the next receive address; derive the same one here to build
-        // the getnewaddress mock response.
-        let secp = secp256k1::Secp256k1::verification_only();
-        let index = ChildNumber::from_normal_idx(1).unwrap();
-        let addr = wallet
-            .main_descriptor
-            .receive_descriptor()
-            .derive(index, &secp)
-            .address(Network::Bitcoin);
-        let daemon = Daemon::new(vec![
-            (
-                Some(
-                    json!({"method": "listrevealedaddresses", "params": [false, true, 20, Option::<ChildNumber>::None]}),
+    #[test]
+    fn test_receive_panel() {
+        block_on(async {
+            let wallet = Arc::new(Wallet::new(LianaDescriptor::from_str(DESC).unwrap()));
+            // The reveal returns the next receive address; derive the same one here to build
+            // the getnewaddress mock response.
+            let secp = secp256k1::Secp256k1::verification_only();
+            let index = ChildNumber::from_normal_idx(1).unwrap();
+            let addr = wallet
+                .main_descriptor
+                .receive_descriptor()
+                .derive(index, &secp)
+                .address(Network::Bitcoin);
+            let daemon = Daemon::new(vec![
+                (
+                    Some(
+                        json!({"method": "listrevealedaddresses", "params": [false, true, 20, Option::<ChildNumber>::None]}),
+                    ),
+                    Ok(json!(ListRevealedAddressesResult {
+                        addresses: vec![],
+                        continue_from: None,
+                    })),
                 ),
-                Ok(json!(ListRevealedAddressesResult {
-                    addresses: vec![],
-                    continue_from: None,
-                })),
-            ),
-            (
-                // getnewaddress: reveal first.
-                Some(json!({"method": "getnewaddress", "params": Option::<Request>::None})),
-                Ok(json!(GetAddressResult::new(addr.clone(), index))),
-            ),
-            // updatelabels: store the label on the revealed address.
-            (None, Ok(json!(null))),
-        ]);
-        let sandbox: Sandbox<ReceivePanel> = Sandbox::new(ReceivePanel::new(
-            LianaDirectory::new(PathBuf::new()),
-            wallet.clone(),
-        ));
-        let client = Arc::new(Lianad::new(daemon.run()));
-        let cache = Cache::default();
-        let sandbox = sandbox.load(client.clone(), &cache, wallet).await;
-        let sandbox = sandbox
-            .update(
-                client.clone(),
-                &cache,
-                Message::View(viewMessage::NextReceiveAddress),
-            )
-            .await;
+                (
+                    // getnewaddress: reveal first.
+                    Some(json!({"method": "getnewaddress", "params": Option::<Request>::None})),
+                    Ok(json!(GetAddressResult::new(addr.clone(), index))),
+                ),
+                // updatelabels: store the label on the revealed address.
+                (None, Ok(json!(null))),
+            ]);
+            let sandbox: Sandbox<ReceivePanel> = Sandbox::new(ReceivePanel::new(
+                LianaDirectory::new(PathBuf::new()),
+                wallet.clone(),
+            ));
+            let client = Arc::new(crate::daemon::AnyDaemon::Mock(Lianad::new(daemon.run())));
+            let cache = Cache::default();
+            let sandbox = sandbox.load(client.clone(), &cache, wallet).await;
+            let sandbox = sandbox
+                .update(
+                    client.clone(),
+                    &cache,
+                    Message::View(viewMessage::NextReceiveAddress),
+                )
+                .await;
 
-        // Generating opens the modal at the mandatory-label step, without revealing or
-        // displaying any address.
-        assert!(matches!(
-            &sandbox.state().modal,
-            Modal::NewAddress(m) if matches!(&m.step, Step::Label { .. })
-        ));
+            // Generating opens the modal at the mandatory-label step, without revealing or
+            // displaying any address.
+            assert!(matches!(
+                &sandbox.state().modal,
+                Modal::NewAddress(m) if matches!(&m.step, Step::Label { .. })
+            ));
 
-        // Enter a label, then confirm: the address is revealed, then its label stored.
-        let sandbox = sandbox
-            .update(
-                client.clone(),
-                &cache,
-                Message::View(viewMessage::NewAddress(
-                    view::NewAddressMessage::LabelEdited("test".to_string()),
-                )),
-            )
-            .await;
-        let sandbox = sandbox
-            .update(
-                client,
-                &cache,
-                Message::View(viewMessage::NewAddress(view::NewAddressMessage::Confirm)),
-            )
-            .await;
+            // Enter a label, then confirm: the address is revealed, then its label stored.
+            let sandbox = sandbox
+                .update(
+                    client.clone(),
+                    &cache,
+                    Message::View(viewMessage::NewAddress(
+                        view::NewAddressMessage::LabelEdited("test".to_string()),
+                    )),
+                )
+                .await;
+            let sandbox = sandbox
+                .update(
+                    client,
+                    &cache,
+                    Message::View(viewMessage::NewAddress(view::NewAddressMessage::Confirm)),
+                )
+                .await;
 
-        // After the reveal, the address is recorded with its label and shown.
-        let panel = sandbox.state();
-        assert_eq!(panel.prev_addresses.list, vec![addr.clone()]);
-        assert_eq!(
-            panel.prev_addresses.labels.get(&addr.to_string()),
-            Some(&"test".to_string())
-        );
-        assert!(matches!(
-            &panel.modal,
-            Modal::NewAddress(m) if matches!(m.step, Step::Show { .. })
-        ));
+            // After the reveal, the address is recorded with its label and shown.
+            let panel = sandbox.state();
+            assert_eq!(panel.prev_addresses.list, vec![addr.clone()]);
+            assert_eq!(
+                panel.prev_addresses.labels.get(&addr.to_string()),
+                Some(&"test".to_string())
+            );
+            assert!(matches!(
+                &panel.modal,
+                Modal::NewAddress(m) if matches!(m.step, Step::Show { .. })
+            ));
+        });
     }
 }

@@ -4,6 +4,7 @@
 //! for representing organizations, wallets, users, and policy templates.
 
 use crate::keys::api::Provider;
+use crate::Uuid;
 use miniscript::{
     bitcoin::bip32::Fingerprint,
     descriptor::{DescriptorMultiXKey, DescriptorXKey, SinglePub},
@@ -14,7 +15,6 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fmt::{self, Display},
 };
-use uuid::Uuid;
 
 pub const BLOCKS_PER_HOUR: u64 = 6; // 60 / 10
 pub const BLOCKS_PER_DAY: u64 = 144; // 24 * 60 / 10
@@ -125,7 +125,7 @@ pub struct Xpub {
     pub file_name: Option<String>,
 }
 
-// NOTE: for now only the device brand is detected in async-hwi, so default
+// NOTE: for now only the device brand is detected in bwk-hwi, so default
 // model will be used, other models are reserved for future use.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DeviceKind {

@@ -134,7 +134,7 @@ impl SettingsTrait for BusinessSettings {
                 .ledger_hmacs
                 .into_iter()
                 .map(|lh| HardwareWalletConfig {
-                    kind: async_hwi::DeviceKind::Ledger.to_string(),
+                    kind: bwk_hwi::DeviceKind::Ledger.to_string(),
                     fingerprint: lh.fingerprint,
                     token: lh.hmac,
                 })
@@ -220,7 +220,9 @@ impl SettingsTrait for BusinessSettings {
                 cache,
                 app_wallet,
                 config,
-                Arc::new(remote_backend),
+                Arc::new(liana_gui::daemon::AnyDaemon::Backend(Box::new(
+                    remote_backend,
+                ))),
                 liana_dir,
                 None,
                 false,

@@ -918,10 +918,10 @@ impl DaemonControl {
         // Finally, update our state with the changes from this transaction.
         let (tx, rx) = mpsc::sync_channel(0);
         if let Err(e) = self.poller_sender.send(PollerMessage::PollNow(tx)) {
-            log::error!("Error requesting update from poller: {}", e);
+            log::error!("Error requesting update from poller: {e}");
         }
         if let Err(e) = rx.recv() {
-            log::error!("Error receiving completion signal from poller: {}", e);
+            log::error!("Error receiving completion signal from poller: {e}");
         }
 
         Ok(())

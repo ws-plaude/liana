@@ -18,7 +18,7 @@ pub enum Error {
     Wallet(WalletError),
     Daemon(DaemonError),
     Unexpected(String),
-    HardwareWallet(async_hwi::Error),
+    HardwareWallet(bwk_hwi::Error),
     Desc(LianaDescError),
     Spend(SpendCreationError),
     ImportExport(export::Error),
@@ -95,8 +95,8 @@ impl From<DaemonError> for Error {
     }
 }
 
-impl From<async_hwi::Error> for Error {
-    fn from(error: async_hwi::Error) -> Self {
+impl From<bwk_hwi::Error> for Error {
+    fn from(error: bwk_hwi::Error) -> Self {
         Error::HardwareWallet(error)
     }
 }

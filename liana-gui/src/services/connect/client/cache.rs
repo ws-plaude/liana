@@ -1,11 +1,10 @@
 use crate::dir::NetworkDirectory;
-use async_fd_lock::LockWrite;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
-use std::io::SeekFrom;
-use tokio::fs::OpenOptions;
-use tokio::io::AsyncSeekExt;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use std::{
+    collections::HashSet,
+    fs::OpenOptions,
+    io::{Read, Seek, SeekFrom, Write},
+};
 
 use super::auth::{AccessTokenResponse, AuthClient, AuthError};
 
@@ -109,8 +108,9 @@ impl Account {
     }
 }
 
-/// Guard returned by [`open_locked_cache`]; holds the exclusive file lock.
-type LockedCache = async_fd_lock::RwLockWriteGuard<tokio::fs::File>;
+/// File returned by [`open_locked_cache`]; holds the exclusive advisory lock
+/// until dropped.
+type LockedCache = std::fs::File;
 
 /// Open the connect cache under an exclusive write lock and return the parsed
 /// contents alongside the still-locked handle. Returns `None` when the file is
@@ -123,7 +123,7 @@ async fn open_locked_cache(
     let mut path = network_dir.path().to_path_buf();
     path.push(CONNECT_CACHE_FILENAME);
 
-    let file_exists = tokio::fs::try_exists(&path).await.unwrap_or(false);
+    let file_exists = path.try_exists().unwrap_or(false);
     if !file_exists && !create_if_missing {
         return Ok(None);
     }
@@ -135,21 +135,19 @@ async fn open_locked_cache(
         }
     }
 
-    let mut file = OpenOptions::new()
+    let file = OpenOptions::new()
         .read(true)
         .write(true)
         .create(create_if_missing)
         .truncate(false)
         .open(&path)
-        .await
-        .map_err(|e| ConnectCacheError::ReadingFile(format!("Opening file: {e}")))?
-        .lock_write()
+        .map_err(|e| ConnectCacheError::ReadingFile(format!("Opening file: {e}")))?;
+    let mut file = crate::utils::lock_write(file)
         .await
         .map_err(|e| ConnectCacheError::ReadingFile(format!("Locking file: {e:?}")))?;
 
     let mut file_content = Vec::new();
     file.read_to_end(&mut file_content)
-        .await
         .map_err(|e| ConnectCacheError::ReadingFile(format!("Reading file content: {e}")))?;
 
     let cache = if file_content.is_empty() {
@@ -158,8 +156,8 @@ async fn open_locked_cache(
         match serde_json::from_slice::<ConnectCache>(&file_content) {
             Ok(cache) => cache,
             Err(e) => {
-                tracing::warn!("Something wrong with Liana-Connect cache file: {:?}", e);
-                tracing::warn!("Liana-Connect cache file is reset");
+                log::warn!("Something wrong with Liana-Connect cache file: {e:?}");
+                log::warn!("Liana-Connect cache file is reset");
                 ConnectCache::default()
             }
         }
@@ -177,18 +175,16 @@ async fn write_cache_back(
         ConnectCacheError::WritingFile(format!("Failed to serialize settings: {e}"))
     })?;
 
-    file.seek(SeekFrom::Start(0)).await.map_err(|e| {
+    file.seek(SeekFrom::Start(0)).map_err(|e| {
         ConnectCacheError::WritingFile(format!("Failed to seek to start of file: {e}"))
     })?;
 
-    file.write_all(&content).await.map_err(|e| {
-        tracing::warn!("failed to write to file: {:?}", e);
+    file.write_all(&content).map_err(|e| {
+        log::warn!("failed to write to file: {e:?}");
         ConnectCacheError::WritingFile(e.to_string())
     })?;
 
-    file.inner_mut()
-        .set_len(content.len() as u64)
-        .await
+    file.set_len(content.len() as u64)
         .map_err(|e| ConnectCacheError::WritingFile(format!("Failed to truncate file: {e}")))?;
 
     Ok(())
@@ -246,9 +242,7 @@ pub async fn update_connect_cache(
             if let (true, Some(uid)) = (needs_stamp, user_id) {
                 cache.accounts[idx].user_id = Some(uid.to_string());
             } else {
-                tracing::debug!(
-                    "Liana-Connect authentication tokens are up to date, nothing to do"
-                );
+                log::debug!("Liana-Connect authentication tokens are up to date, nothing to do");
             }
             (cache.accounts[idx].tokens.clone(), needs_stamp)
         }

@@ -1,7 +1,8 @@
 use crate::Message;
-use crossbeam::channel;
+use crossbeam_channel as channel;
 use iced::futures::Stream;
 use liana_connect::ws_business::{Org, RegistrationInfos, User, Wallet, WssError, Xpub};
+use liana_connect::Uuid;
 use std::{
     collections::BTreeMap,
     pin::Pin,
@@ -9,7 +10,6 @@ use std::{
     task::{Context, Poll},
 };
 use thiserror::Error;
-use uuid::Uuid;
 
 #[derive(Debug, Clone, Error)]
 pub enum Error {

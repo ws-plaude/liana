@@ -39,7 +39,7 @@ impl LabelsEdited {
     }
     pub fn update<'a, T: IntoIterator<Item = &'a mut dyn LabelsLoader>>(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         message: Message,
         targets: T,
     ) -> Result<Task<Message>, Error> {

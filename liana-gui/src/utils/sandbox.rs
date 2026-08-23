@@ -3,10 +3,7 @@ use std::sync::Arc;
 
 use iced_runtime::{task::into_stream, Action};
 
-use crate::{
-    app::{cache::Cache, message::Message, state::State, wallet::Wallet},
-    daemon::Daemon,
-};
+use crate::app::{cache::Cache, message::Message, state::State, wallet::Wallet};
 
 pub struct Sandbox<S: State> {
     state: S,
@@ -23,7 +20,7 @@ impl<S: State + 'static> Sandbox<S> {
 
     pub async fn update(
         mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         cache: &Cache,
         message: Message,
     ) -> Self {
@@ -40,7 +37,7 @@ impl<S: State + 'static> Sandbox<S> {
 
     pub async fn load(
         mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         cache: &Cache,
         wallet: Arc<Wallet>,
     ) -> Self {

@@ -67,12 +67,7 @@ impl Login {
 
     pub fn on_update_email(&mut self, email: String) {
         // An empty field is neutral, not invalid.
-        let valid = email.is_empty()
-            || email_address::EmailAddress::parse_with_options(
-                &email,
-                email_address::Options::default().with_required_tld(),
-            )
-            .is_ok();
+        let valid = email.is_empty() || liana_gui::utils::is_valid_email(&email);
         self.email.form.valid = valid;
         self.email.form.warning = (!valid).then_some("Invalid email!");
         self.email.form.value = email;

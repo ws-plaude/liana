@@ -12,7 +12,7 @@ use crate::{
     services::connect::client::backend::{BackendClient, BackendWalletClient},
     signer::Signer,
 };
-use async_hwi::DeviceKind;
+use bwk_hwi::DeviceKind;
 use liana::{
     descriptors::{LianaDescriptor, PathInfo},
     miniscript::bitcoin,

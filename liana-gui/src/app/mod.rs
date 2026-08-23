@@ -16,9 +16,9 @@ use std::io::Write;
 use std::sync::Arc;
 use std::time::Duration;
 
+use futures::executor::block_on;
 use iced::{clipboard, Subscription, Task};
-use tokio::runtime::Handle;
-use tracing::{error, info, warn};
+use log::{error, info, warn};
 
 pub use liana::miniscript::bitcoin;
 use liana_ui::{
@@ -66,7 +66,7 @@ impl<S: SettingsTrait> Panels<S> {
     fn new(
         cache: &Cache,
         wallet: Arc<Wallet>,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         data_dir: LianaDirectory,
         daemon_backend: DaemonBackend,
         internal_bitcoind: Option<&Bitcoind>,
@@ -162,7 +162,7 @@ impl<S: SettingsTrait> Panels<S> {
 pub struct App<S: SettingsTrait = LianaSettings> {
     cache: Cache,
     wallet: Arc<Wallet>,
-    daemon: Arc<dyn Daemon + Sync + Send>,
+    daemon: Arc<crate::daemon::AnyDaemon>,
     internal_bitcoind: Option<Bitcoind>,
 
     panels: Panels<S>,
@@ -176,7 +176,7 @@ impl<S: SettingsTrait> App<S> {
         cache: Cache,
         wallet: Arc<Wallet>,
         config: Config,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         data_dir: LianaDirectory,
         internal_bitcoind: Option<Bitcoind>,
         restored_from_backup: bool,
@@ -247,7 +247,7 @@ impl<S: SettingsTrait> App<S> {
 
         match &menu {
             menu::Menu::TransactionPreSelected(txid) => {
-                if let Ok(Some(tx)) = Handle::current().block_on(async {
+                if let Ok(Some(tx)) = block_on(async {
                     self.daemon
                         .get_history_txs(&[*txid])
                         .await
@@ -262,7 +262,7 @@ impl<S: SettingsTrait> App<S> {
                 // Get preselected spend from DB in case it's not yet in the cache.
                 // We only need this single spend as we will go straight to its view and not show the PSBTs list.
                 // In case of any error loading the spend or if it doesn't exist, load PSBTs list in usual way.
-                if let Ok(Some(spend_tx)) = Handle::current().block_on(async {
+                if let Ok(Some(spend_tx)) = block_on(async {
                     self.daemon
                         .list_spend_transactions(Some(&[*txid]))
                         .await
@@ -324,8 +324,8 @@ impl<S: SettingsTrait> App<S> {
     pub fn stop(&mut self) {
         info!("Close requested");
         if self.daemon.backend().is_embedded() {
-            if let Err(e) = Handle::current().block_on(async { self.daemon.stop().await }) {
-                error!("{}", e);
+            if let Err(e) = block_on(async { self.daemon.stop().await }) {
+                error!("{e}");
             } else {
                 info!("Internal daemon stopped");
             }
@@ -373,7 +373,7 @@ impl<S: SettingsTrait> App<S> {
             },
         );
         if self.cache.daemon_cache.last_tick + duration <= tick {
-            tracing::debug!("Updating daemon cache");
+            log::debug!("Updating daemon cache");
 
             // We have to update here the last_tick to prevent that during a burst of events
             // there is a race condition with the Task and too much tasks are triggered.
@@ -410,11 +410,7 @@ impl<S: SettingsTrait> App<S> {
             .fiat_price_setting
             .as_ref()
             .is_some_and(|s| s.is_enabled);
-        tracing::trace!(
-            "Fiat check: is_remote={}, has_fiat_setting={}",
-            is_remote,
-            has_fiat_setting
-        );
+        log::trace!("Fiat check: is_remote={is_remote}, has_fiat_setting={has_fiat_setting}");
         if is_remote {
             if let Some(sett) = self
                 .wallet
@@ -427,14 +423,14 @@ impl<S: SettingsTrait> App<S> {
                     p.currency() == currency
                         && p.requested_at().elapsed() <= Duration::from_secs(300)
                 });
-                tracing::trace!(
+                log::trace!(
                     "Fiat: enabled={}, currency={}, is_stale={}",
                     sett.is_enabled,
                     currency,
                     is_stale
                 );
                 if is_stale {
-                    tracing::trace!("Fiat: fetching rates from backend");
+                    log::trace!("Fiat: fetching rates from backend");
                     let daemon = self.daemon.clone();
                     let source = sett.source;
                     tasks.push(Task::perform(
@@ -443,7 +439,7 @@ impl<S: SettingsTrait> App<S> {
                             let request = cache::FiatPriceRequest::new(source, currency);
                             match daemon.get_fiat_rates().await {
                                 Ok((rates, feerate)) => {
-                                    tracing::trace!("Fiat: got rates from backend: {:?}", rates);
+                                    log::trace!("Fiat: got rates from backend: {rates:?}");
                                     let key = format!("BTC{currency}");
                                     let res = rates
                                         .get(&key)
@@ -460,7 +456,7 @@ impl<S: SettingsTrait> App<S> {
                                     (cache::FiatPrice { res, request }, feerate)
                                 }
                                 Err(e) => {
-                                    tracing::trace!("Fiat: backend error: {}", e);
+                                    log::trace!("Fiat: backend error: {e}");
                                     (
                                         cache::FiatPrice {
                                             res: Err(PriceApiError::RequestFailed(e.to_string())),
@@ -488,7 +484,7 @@ impl<S: SettingsTrait> App<S> {
                 let feerate_changed = self.cache.feerate_estimate != feerate;
                 self.cache.feerate_estimate = feerate;
                 let relevant = self.wallet.fiat_price_is_relevant(&fiat_price);
-                tracing::trace!(
+                log::trace!(
                     "Fiat: GetPriceResult received, relevant={}, res={:?}",
                     relevant,
                     fiat_price.res.as_ref().map(|r| r.value)
@@ -501,7 +497,7 @@ impl<S: SettingsTrait> App<S> {
                             && cached.requested_at() >= fiat_price.requested_at()
                     })
                 {
-                    tracing::trace!("Fiat: caching price");
+                    log::trace!("Fiat: caching price");
                     self.cache.fiat_price = Some(fiat_price);
                     Task::perform(async {}, |_| Message::CacheUpdated)
                 } else if feerate_changed {
@@ -517,7 +513,7 @@ impl<S: SettingsTrait> App<S> {
                         return Task::perform(async {}, |_| Message::CacheUpdated);
                     }
                     Err(e) => {
-                        tracing::error!("Failed to update daemon cache: {}", e);
+                        log::error!("Failed to update daemon cache: {e}");
                         if let Error::Daemon(DaemonError::Http(Some(status), _)) = e {
                             if status == 401 {
                                 return Task::perform(async {}, |_| {
@@ -564,8 +560,8 @@ impl<S: SettingsTrait> App<S> {
             }
             Message::View(view::Message::Menu(menu)) => self.set_current_panel(menu),
             Message::View(view::Message::OpenUrl(url)) => {
-                if let Err(e) = open::that_detached(&url) {
-                    tracing::error!("Error opening '{}': {}", url, e);
+                if let Err(e) = crate::utils::open_url(&url) {
+                    log::error!("Error opening '{url}': {e}");
                 }
                 Task::none()
             }
@@ -582,10 +578,10 @@ impl<S: SettingsTrait> App<S> {
         datadir_path: LianaDirectory,
         cfg: DaemonConfig,
     ) -> Result<(), Error> {
-        Handle::current().block_on(async { self.daemon.stop().await })?;
+        block_on(async { self.daemon.stop().await })?;
         let network = cfg.bitcoin_config.network;
         let daemon = EmbeddedDaemon::start(cfg)?;
-        self.daemon = Arc::new(daemon);
+        self.daemon = Arc::new(crate::daemon::AnyDaemon::Embedded(Box::new(daemon)));
         let mut daemon_config_path = datadir_path
             .network_directory(network)
             .lianad_data_directory(&self.wallet.id())
@@ -603,7 +599,7 @@ impl<S: SettingsTrait> App<S> {
             .map_err(|e| Error::Config(e.to_string()))?
             .write_all(content.as_bytes())
             .map_err(|e| {
-                warn!("failed to write to file: {:?}", e);
+                warn!("failed to write to file: {e:?}");
                 Error::Config(e.to_string())
             })
     }

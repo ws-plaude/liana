@@ -48,7 +48,7 @@ pub trait State {
     fn view<'a>(&'a self, cache: &'a Cache) -> Element<'a, view::Message>;
     fn update(
         &mut self,
-        _daemon: Arc<dyn Daemon + Sync + Send>,
+        _daemon: Arc<crate::daemon::AnyDaemon>,
         _cache: &Cache,
         _message: Message,
     ) -> Task<Message> {
@@ -60,7 +60,7 @@ pub trait State {
     fn interrupt(&mut self) {}
     fn reload(
         &mut self,
-        _daemon: Arc<dyn Daemon + Sync + Send>,
+        _daemon: Arc<crate::daemon::AnyDaemon>,
         _wallet: Arc<Wallet>,
     ) -> Task<Message> {
         Task::none()
@@ -226,7 +226,7 @@ impl State for Home {
 
     fn update(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         cache: &Cache,
         message: Message,
     ) -> Task<Message> {
@@ -374,7 +374,7 @@ impl State for Home {
                     self.processing = true;
                     return Task::perform(
                         async move {
-                            let last_event_date = last_event_date.timestamp() as u32;
+                            let last_event_date = last_event_date as u32;
                             let mut limit = HISTORY_EVENT_PAGE_SIZE;
                             let mut events = daemon
                                 .list_confirmed_payments(0_u32, last_event_date, limit)
@@ -418,7 +418,7 @@ impl State for Home {
 
     fn reload(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         wallet: Arc<Wallet>,
     ) -> Task<Message> {
         // If the wallet is syncing, we expect it to finish soon and so better to wait for
@@ -472,167 +472,170 @@ impl From<Home> for Box<dyn State> {
 mod tests {
     use super::*;
     use crate::daemon::model::Coin;
+    use futures::executor::block_on;
     use liana::miniscript::bitcoin;
     use lianad::commands::LCSpendInfo;
     use std::str::FromStr;
-    #[tokio::test]
-    async fn test_coins_summary() {
-        // Will use the same address for all coins.
-        let dummy_address =
-            bitcoin::Address::from_str("bc1qvrl2849aggm6qry9ea7xqp2kk39j8vaa8r3cwg")
-                .unwrap()
-                .assume_checked();
-        // Will use the same txid for all outpoints and spend info.
-        let dummy_txid = bitcoin::Txid::from_str(
-            "f7bd1b2a995b689d326e51eb742eb1088c4a8f110d9cb56128fd553acc9f88e5",
-        )
-        .unwrap();
+    #[test]
+    fn test_coins_summary() {
+        block_on(async {
+            // Will use the same address for all coins.
+            let dummy_address =
+                bitcoin::Address::from_str("bc1qvrl2849aggm6qry9ea7xqp2kk39j8vaa8r3cwg")
+                    .unwrap()
+                    .assume_checked();
+            // Will use the same txid for all outpoints and spend info.
+            let dummy_txid = bitcoin::Txid::from_str(
+                "f7bd1b2a995b689d326e51eb742eb1088c4a8f110d9cb56128fd553acc9f88e5",
+            )
+            .unwrap();
 
-        let tip_height = 800_000;
-        let timelock = 10_000;
-        let mut coins = Vec::new();
-        // Without coins, all values are 0 / empty / None:
-        assert_eq!(
-            coins_summary(&coins, tip_height, timelock),
-            (Amount::from_sat(0), Amount::from_sat(0), Vec::new(), None)
-        );
-        // Add a spending coin.
-        coins.push(Coin {
-            outpoint: OutPoint::new(dummy_txid, 0),
-            amount: Amount::from_sat(100),
-            address: dummy_address.clone(),
-            derivation_index: bitcoin::bip32::ChildNumber::Normal { index: 0 },
-            block_height: Some(1),
-            is_immature: false,
-            is_change: false,
-            is_from_self: false,
-            spend_info: Some(LCSpendInfo {
-                txid: dummy_txid,
-                height: None,
-            }),
+            let tip_height = 800_000;
+            let timelock = 10_000;
+            let mut coins = Vec::new();
+            // Without coins, all values are 0 / empty / None:
+            assert_eq!(
+                coins_summary(&coins, tip_height, timelock),
+                (Amount::from_sat(0), Amount::from_sat(0), Vec::new(), None)
+            );
+            // Add a spending coin.
+            coins.push(Coin {
+                outpoint: OutPoint::new(dummy_txid, 0),
+                amount: Amount::from_sat(100),
+                address: dummy_address.clone(),
+                derivation_index: bitcoin::bip32::ChildNumber::Normal { index: 0 },
+                block_height: Some(1),
+                is_immature: false,
+                is_change: false,
+                is_from_self: false,
+                spend_info: Some(LCSpendInfo {
+                    txid: dummy_txid,
+                    height: None,
+                }),
+            });
+            // Spending coin is ignored.
+            assert_eq!(
+                coins_summary(&coins, tip_height, timelock),
+                (Amount::from_sat(0), Amount::from_sat(0), Vec::new(), None)
+            );
+            // Add unconfirmed change coin not from self.
+            coins.push(Coin {
+                outpoint: OutPoint::new(dummy_txid, 1),
+                amount: Amount::from_sat(109),
+                address: dummy_address.clone(),
+                derivation_index: bitcoin::bip32::ChildNumber::Normal { index: 1 },
+                block_height: None,
+                is_immature: false,
+                is_change: true,
+                is_from_self: false,
+                spend_info: None,
+            });
+            // Included in unconfirmed balance. Other values remain the same.
+            assert_eq!(
+                coins_summary(&coins, tip_height, timelock),
+                (Amount::from_sat(0), Amount::from_sat(109), Vec::new(), None)
+            );
+            // Add unconfirmed coin from self.
+            coins.push(Coin {
+                outpoint: OutPoint::new(dummy_txid, 2),
+                amount: Amount::from_sat(111),
+                address: dummy_address.clone(),
+                derivation_index: bitcoin::bip32::ChildNumber::Normal { index: 2 },
+                block_height: None,
+                is_immature: false,
+                is_change: false,
+                is_from_self: true,
+                spend_info: None,
+            });
+            // Included in confirmed balance. Other values remain the same.
+            assert_eq!(
+                coins_summary(&coins, tip_height, timelock),
+                (
+                    Amount::from_sat(111),
+                    Amount::from_sat(109),
+                    Vec::new(),
+                    None
+                )
+            );
+            // Add a confirmed coin 1 more than 10% from expiry:
+            coins.push(Coin {
+                outpoint: OutPoint::new(dummy_txid, 3),
+                amount: Amount::from_sat(101),
+                address: dummy_address.clone(),
+                derivation_index: bitcoin::bip32::ChildNumber::Normal { index: 3 },
+                block_height: Some(791_001), // 791_001 + timelock - tip_height = 1_001 > 1_000 = (timelock / 10)
+                is_immature: false,
+                is_change: false,
+                is_from_self: false,
+                spend_info: None,
+            });
+            // Coin is added to confirmed balance. Not expiring, but remaining seq is set.
+            assert_eq!(
+                coins_summary(&coins, tip_height, timelock),
+                (
+                    Amount::from_sat(212),
+                    Amount::from_sat(109),
+                    Vec::new(),
+                    Some(1_001)
+                )
+            );
+            // Now decrease the last coin's confirmation height by 1 so that
+            // it is within 10% of expiry:
+            coins.last_mut().unwrap().block_height = Some(791_000);
+            // Its outpoint has been added to expiring coins and remaining seq is lower.
+            assert_eq!(
+                coins_summary(&coins, tip_height, timelock),
+                (
+                    Amount::from_sat(212),
+                    Amount::from_sat(109),
+                    vec![OutPoint::new(dummy_txid, 3)],
+                    Some(1_000)
+                )
+            );
+            // Now add a confirmed coin that is not yet expiring.
+            coins.push(Coin {
+                outpoint: OutPoint::new(dummy_txid, 4),
+                amount: Amount::from_sat(105),
+                address: dummy_address.clone(),
+                derivation_index: bitcoin::bip32::ChildNumber::Normal { index: 4 },
+                block_height: Some(792_000),
+                is_immature: false,
+                is_change: false,
+                is_from_self: false,
+                spend_info: None,
+            });
+            // Only confirmed balance has changed.
+            assert_eq!(
+                coins_summary(&coins, tip_height, timelock),
+                (
+                    Amount::from_sat(317),
+                    Amount::from_sat(109),
+                    vec![OutPoint::new(dummy_txid, 3)],
+                    Some(1_000)
+                )
+            );
+            // Now add another confirmed coin that is expiring.
+            coins.push(Coin {
+                outpoint: OutPoint::new(dummy_txid, 5),
+                amount: Amount::from_sat(108),
+                address: dummy_address.clone(),
+                derivation_index: bitcoin::bip32::ChildNumber::Normal { index: 5 },
+                block_height: Some(790_500),
+                is_immature: false,
+                is_change: false,
+                is_from_self: false,
+                spend_info: None,
+            });
+            // Confirmed balance updated, as well as expiring coins and the remaining seq.
+            assert_eq!(
+                coins_summary(&coins, tip_height, timelock),
+                (
+                    Amount::from_sat(425),
+                    Amount::from_sat(109),
+                    vec![OutPoint::new(dummy_txid, 3), OutPoint::new(dummy_txid, 5)],
+                    Some(500)
+                )
+            );
         });
-        // Spending coin is ignored.
-        assert_eq!(
-            coins_summary(&coins, tip_height, timelock),
-            (Amount::from_sat(0), Amount::from_sat(0), Vec::new(), None)
-        );
-        // Add unconfirmed change coin not from self.
-        coins.push(Coin {
-            outpoint: OutPoint::new(dummy_txid, 1),
-            amount: Amount::from_sat(109),
-            address: dummy_address.clone(),
-            derivation_index: bitcoin::bip32::ChildNumber::Normal { index: 1 },
-            block_height: None,
-            is_immature: false,
-            is_change: true,
-            is_from_self: false,
-            spend_info: None,
-        });
-        // Included in unconfirmed balance. Other values remain the same.
-        assert_eq!(
-            coins_summary(&coins, tip_height, timelock),
-            (Amount::from_sat(0), Amount::from_sat(109), Vec::new(), None)
-        );
-        // Add unconfirmed coin from self.
-        coins.push(Coin {
-            outpoint: OutPoint::new(dummy_txid, 2),
-            amount: Amount::from_sat(111),
-            address: dummy_address.clone(),
-            derivation_index: bitcoin::bip32::ChildNumber::Normal { index: 2 },
-            block_height: None,
-            is_immature: false,
-            is_change: false,
-            is_from_self: true,
-            spend_info: None,
-        });
-        // Included in confirmed balance. Other values remain the same.
-        assert_eq!(
-            coins_summary(&coins, tip_height, timelock),
-            (
-                Amount::from_sat(111),
-                Amount::from_sat(109),
-                Vec::new(),
-                None
-            )
-        );
-        // Add a confirmed coin 1 more than 10% from expiry:
-        coins.push(Coin {
-            outpoint: OutPoint::new(dummy_txid, 3),
-            amount: Amount::from_sat(101),
-            address: dummy_address.clone(),
-            derivation_index: bitcoin::bip32::ChildNumber::Normal { index: 3 },
-            block_height: Some(791_001), // 791_001 + timelock - tip_height = 1_001 > 1_000 = (timelock / 10)
-            is_immature: false,
-            is_change: false,
-            is_from_self: false,
-            spend_info: None,
-        });
-        // Coin is added to confirmed balance. Not expiring, but remaining seq is set.
-        assert_eq!(
-            coins_summary(&coins, tip_height, timelock),
-            (
-                Amount::from_sat(212),
-                Amount::from_sat(109),
-                Vec::new(),
-                Some(1_001)
-            )
-        );
-        // Now decrease the last coin's confirmation height by 1 so that
-        // it is within 10% of expiry:
-        coins.last_mut().unwrap().block_height = Some(791_000);
-        // Its outpoint has been added to expiring coins and remaining seq is lower.
-        assert_eq!(
-            coins_summary(&coins, tip_height, timelock),
-            (
-                Amount::from_sat(212),
-                Amount::from_sat(109),
-                vec![OutPoint::new(dummy_txid, 3)],
-                Some(1_000)
-            )
-        );
-        // Now add a confirmed coin that is not yet expiring.
-        coins.push(Coin {
-            outpoint: OutPoint::new(dummy_txid, 4),
-            amount: Amount::from_sat(105),
-            address: dummy_address.clone(),
-            derivation_index: bitcoin::bip32::ChildNumber::Normal { index: 4 },
-            block_height: Some(792_000),
-            is_immature: false,
-            is_change: false,
-            is_from_self: false,
-            spend_info: None,
-        });
-        // Only confirmed balance has changed.
-        assert_eq!(
-            coins_summary(&coins, tip_height, timelock),
-            (
-                Amount::from_sat(317),
-                Amount::from_sat(109),
-                vec![OutPoint::new(dummy_txid, 3)],
-                Some(1_000)
-            )
-        );
-        // Now add another confirmed coin that is expiring.
-        coins.push(Coin {
-            outpoint: OutPoint::new(dummy_txid, 5),
-            amount: Amount::from_sat(108),
-            address: dummy_address.clone(),
-            derivation_index: bitcoin::bip32::ChildNumber::Normal { index: 5 },
-            block_height: Some(790_500),
-            is_immature: false,
-            is_change: false,
-            is_from_self: false,
-            spend_info: None,
-        });
-        // Confirmed balance updated, as well as expiring coins and the remaining seq.
-        assert_eq!(
-            coins_summary(&coins, tip_height, timelock),
-            (
-                Amount::from_sat(425),
-                Amount::from_sat(109),
-                vec![OutPoint::new(dummy_txid, 3), OutPoint::new(dummy_txid, 5)],
-                Some(500)
-            )
-        );
     }
 }

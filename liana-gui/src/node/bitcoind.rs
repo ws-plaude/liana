@@ -1,7 +1,10 @@
 use base64::Engine;
-use bitcoin_hashes::{sha256, Hash, HashEngine, Hmac, HmacEngine};
 use liana::{
-    miniscript::bitcoin::{self, Network},
+    miniscript::bitcoin::{
+        self,
+        hashes::{sha256, Hash, HashEngine, Hmac, HmacEngine},
+        Network,
+    },
     random::{random_bytes, RandomnessError},
 };
 use liana_ui::component::form;
@@ -13,7 +16,7 @@ use std::path::{Path, PathBuf};
 use std::thread;
 use std::time;
 
-use tracing::{info, warn};
+use log::{info, warn};
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -138,7 +141,6 @@ pub fn bitcoind_network_dir(network: &Network) -> Option<String> {
         Network::Testnet4 => "testnet4",
         Network::Regtest => "regtest",
         Network::Signet => "signet",
-        _ => panic!("Directory required for this network is unknown."),
     };
     Some(dir.to_string())
 }
@@ -276,85 +278,13 @@ impl InternalBitcoindConfig {
         }
     }
 
-    pub fn from_ini(ini: &ini::Ini) -> Result<Self, InternalBitcoindConfigError> {
-        let mut networks = BTreeMap::new();
-        for (maybe_sec, prop) in ini {
-            if let Some(sec) = maybe_sec {
-                let network = Network::from_core_arg(sec)
-                    .map_err(|e| InternalBitcoindConfigError::UnexpectedSection(e.to_string()))?;
-                if prop.len() > 4 {
-                    return Err(InternalBitcoindConfigError::TooManyElements(
-                        sec.to_string(),
-                    ));
-                }
-                let rpc_port = prop
-                    .get("rpcport")
-                    .ok_or_else(|| InternalBitcoindConfigError::KeyNotFound("rpcport".to_string()))?
-                    .parse::<u16>()
-                    .map_err(|e| InternalBitcoindConfigError::CouldNotParseValue(e.to_string()))?;
-                let p2p_port = prop
-                    .get("port")
-                    .ok_or_else(|| InternalBitcoindConfigError::KeyNotFound("port".to_string()))?
-                    .parse::<u16>()
-                    .map_err(|e| InternalBitcoindConfigError::CouldNotParseValue(e.to_string()))?;
-                let prune = prop
-                    .get("prune")
-                    .ok_or_else(|| InternalBitcoindConfigError::KeyNotFound("prune".to_string()))?
-                    .parse::<u32>()
-                    .map_err(|e| InternalBitcoindConfigError::CouldNotParseValue(e.to_string()))?;
-                let rpc_auth = prop
-                    .get("rpcauth")
-                    .map(|v| {
-                        v.parse::<RpcAuth>().map_err(|e| {
-                            InternalBitcoindConfigError::CouldNotParseValue(e.to_string())
-                        })
-                    })
-                    .transpose()?;
-
-                networks.insert(
-                    network,
-                    InternalBitcoindNetworkConfig {
-                        rpc_port,
-                        p2p_port,
-                        prune,
-                        rpc_auth,
-                    },
-                );
-            } else if !prop.is_empty() {
-                return Err(InternalBitcoindConfigError::UnexpectedSection(
-                    "General section should be empty".to_string(),
-                ));
-            }
-        }
-        Ok(Self { networks })
-    }
-
     pub fn from_file(path: &PathBuf) -> Result<Self, InternalBitcoindConfigError> {
         if !path.exists() {
             return Err(InternalBitcoindConfigError::FileNotFound);
         }
-        let conf_ini = ini::Ini::load_from_file(path)
-            .map_err(|e| InternalBitcoindConfigError::ReadingFile(e.to_string()))?;
-
-        Self::from_ini(&conf_ini)
-    }
-
-    pub fn to_ini(&self) -> ini::Ini {
-        let mut conf_ini = ini::Ini::new();
-
-        for (network, network_conf) in &self.networks {
-            conf_ini
-                .with_section(Some(network.to_core_arg()))
-                .set("rpcport", network_conf.rpc_port.to_string())
-                .set("port", network_conf.p2p_port.to_string())
-                .set("prune", network_conf.prune.to_string());
-            if let Some(rpc_auth) = network_conf.rpc_auth.as_ref() {
-                conf_ini
-                    .with_section(Some(network.to_core_arg()))
-                    .set("rpcauth", rpc_auth.to_string());
-            }
-        }
-        conf_ini
+        std::fs::read_to_string(path)
+            .map_err(|e| InternalBitcoindConfigError::ReadingFile(e.to_string()))?
+            .parse()
     }
 
     pub fn to_file(&self, path: &PathBuf) -> Result<(), InternalBitcoindConfigError> {
@@ -364,10 +294,116 @@ impl InternalBitcoindConfig {
         )
         .map_err(|e| InternalBitcoindConfigError::Unexpected(e.to_string()))?;
         info!("Writing to file {}", path.to_string_lossy());
-        self.to_ini()
-            .write_to_file(path)
+        std::fs::write(path, self.to_string())
             .map_err(|e| InternalBitcoindConfigError::WritingFile(e.to_string()))?;
 
+        Ok(())
+    }
+}
+
+fn network_config_from_props(
+    section: &str,
+    props: &BTreeMap<String, String>,
+) -> Result<(Network, InternalBitcoindNetworkConfig), InternalBitcoindConfigError> {
+    let network = Network::from_core_arg(section)
+        .map_err(|e| InternalBitcoindConfigError::UnexpectedSection(e.to_string()))?;
+    if props.len() > 4 {
+        return Err(InternalBitcoindConfigError::TooManyElements(
+            section.to_string(),
+        ));
+    }
+    let rpc_port = props
+        .get("rpcport")
+        .ok_or_else(|| InternalBitcoindConfigError::KeyNotFound("rpcport".to_string()))?
+        .parse::<u16>()
+        .map_err(|e| InternalBitcoindConfigError::CouldNotParseValue(e.to_string()))?;
+    let p2p_port = props
+        .get("port")
+        .ok_or_else(|| InternalBitcoindConfigError::KeyNotFound("port".to_string()))?
+        .parse::<u16>()
+        .map_err(|e| InternalBitcoindConfigError::CouldNotParseValue(e.to_string()))?;
+    let prune = props
+        .get("prune")
+        .ok_or_else(|| InternalBitcoindConfigError::KeyNotFound("prune".to_string()))?
+        .parse::<u32>()
+        .map_err(|e| InternalBitcoindConfigError::CouldNotParseValue(e.to_string()))?;
+    let rpc_auth = props
+        .get("rpcauth")
+        .map(|v| {
+            v.parse::<RpcAuth>()
+                .map_err(|e| InternalBitcoindConfigError::CouldNotParseValue(e.to_string()))
+        })
+        .transpose()?;
+
+    Ok((
+        network,
+        InternalBitcoindNetworkConfig {
+            rpc_port,
+            p2p_port,
+            prune,
+            rpc_auth,
+        },
+    ))
+}
+
+impl std::str::FromStr for InternalBitcoindConfig {
+    type Err = InternalBitcoindConfigError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut networks = BTreeMap::new();
+        let mut current: Option<(String, BTreeMap<String, String>)> = None;
+        for line in s.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') || line.starts_with(';') {
+                continue;
+            }
+            if let Some(section) = line
+                .strip_prefix('[')
+                .and_then(|rest| rest.strip_suffix(']'))
+            {
+                if let Some((prev, props)) = current.take() {
+                    let (network, conf) = network_config_from_props(&prev, &props)?;
+                    networks.insert(network, conf);
+                }
+                current = Some((section.to_string(), BTreeMap::new()));
+            } else {
+                let (key, value) = line.split_once('=').ok_or_else(|| {
+                    InternalBitcoindConfigError::CouldNotParseValue(line.to_string())
+                })?;
+                match current.as_mut() {
+                    Some((_, props)) => {
+                        props.insert(key.trim().to_string(), value.trim().to_string());
+                    }
+                    None => {
+                        return Err(InternalBitcoindConfigError::UnexpectedSection(
+                            "General section should be empty".to_string(),
+                        ))
+                    }
+                }
+            }
+        }
+        if let Some((prev, props)) = current {
+            let (network, conf) = network_config_from_props(&prev, &props)?;
+            networks.insert(network, conf);
+        }
+        Ok(Self { networks })
+    }
+}
+
+impl fmt::Display for InternalBitcoindConfig {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for (i, (network, conf)) in self.networks.iter().enumerate() {
+            if i > 0 {
+                writeln!(f)?;
+            }
+            writeln!(f, "[{}]", network.to_core_arg())?;
+            writeln!(f, "rpcport={}", conf.rpc_port)?;
+            writeln!(f, "port={}", conf.p2p_port)?;
+            writeln!(f, "prune={}", conf.prune)?;
+            if let Some(rpc_auth) = conf.rpc_auth.as_ref() {
+                writeln!(f, "rpcauth={rpc_auth}")?;
+            }
+        }
         Ok(())
     }
 }
@@ -492,9 +528,9 @@ impl Bitcoind {
         loop {
             match process.try_wait() {
                 Ok(None) => {}
-                Err(e) => log::error!("Error while trying to wait for bitcoind: {}", e),
+                Err(e) => log::error!("Error while trying to wait for bitcoind: {e}"),
                 Ok(Some(status)) => {
-                    log::error!("Bitcoind exited with status '{}'", status);
+                    log::error!("Bitcoind exited with status '{status}'");
                     return Err(StartInternalBitcoindError::ProcessExited(status));
                 }
             }
@@ -519,7 +555,7 @@ impl Bitcoind {
                         // reading the previous state of the .cookie file and not the new generated
                         // one.
                         if let Err(e) = process.kill() {
-                            log::error!("Error trying to kill bitcoind process: '{}'", e);
+                            log::error!("Error trying to kill bitcoind process: '{e}'");
                         }
                         return Err(StartInternalBitcoindError::BitcoinDError(e.to_string()));
                     }
@@ -535,7 +571,7 @@ impl Bitcoind {
     pub fn stop(self) {
         match self.lock.delete() {
             Err(e) => {
-                tracing::error!("Failed to release bitcoind lock: {}", e);
+                log::error!("Failed to release bitcoind lock: {e}");
             }
             Ok(false) => {
                 info!("Other processes are using internal bitcoind. Process lock has been deleted");
@@ -548,7 +584,7 @@ impl Bitcoind {
                         info!("Stopped liana managed bitcoind");
                     }
                     Err(e) => {
-                        warn!("Could not create interface to internal bitcoind: '{}'.", e);
+                        warn!("Could not create interface to internal bitcoind: '{e}'.");
                     }
                 }
             }
@@ -628,10 +664,10 @@ pub fn delete_all_bitcoind_locks_for_process(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let locks_directory = directory.path().join(LOCK_DIRECTORY_NAME);
     if !locks_directory.exists() {
-        tracing::debug!("No internal bitcoind locks for the current process");
+        log::debug!("No internal bitcoind locks for the current process");
         return Ok(());
     }
-    tracing::info!("Deleting all internal bitcoind locks for the current process");
+    log::info!("Deleting all internal bitcoind locks for the current process");
     let process_prefix = format!("{}-", std::process::id());
     for network_dir in std::fs::read_dir(&locks_directory)? {
         let dir = network_dir?.path();
@@ -697,26 +733,23 @@ impl fmt::Display for ConfigField {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ini::Ini;
     use liana::miniscript::bitcoin::Network;
+
+    const VALID_CONF: &str = "[main]\n\
+        rpcport=43345\n\
+        port=42355\n\
+        prune=15246\n\
+        \n\
+        [regtest]\n\
+        rpcport=34067\n\
+        port=45175\n\
+        prune=2043\n\
+        rpcauth=my_user:my_salt$my_pw_hmac\n";
 
     // Test the format of the internal bitcoind configuration file.
     #[test]
     fn internal_bitcoind_config() {
-        // A valid config
-        let mut conf_ini = Ini::new();
-        conf_ini
-            .with_section(Some("main"))
-            .set("rpcport", "43345")
-            .set("port", "42355")
-            .set("prune", "15246");
-        conf_ini
-            .with_section(Some("regtest"))
-            .set("rpcport", "34067")
-            .set("port", "45175")
-            .set("prune", "2043")
-            .set("rpcauth", "my_user:my_salt$my_pw_hmac");
-        let conf = InternalBitcoindConfig::from_ini(&conf_ini).expect("Loading conf from ini");
+        let conf: InternalBitcoindConfig = VALID_CONF.parse().expect("Parsing conf");
         let main_conf = InternalBitcoindNetworkConfig {
             rpc_port: 43345,
             p2p_port: 42355,
@@ -748,33 +781,41 @@ mod tests {
         let mut conf = InternalBitcoindConfig::new();
         conf.networks.insert(Network::Bitcoin, main_conf);
         conf.networks.insert(Network::Regtest, regtest_conf);
-        conf_ini = conf.to_ini();
-        assert_eq!(conf_ini.len(), 3); // 2 network sections plus the empty general section
-        assert!(conf_ini.general_section().is_empty());
-        for (sec, prop) in &conf_ini {
-            if let Some(sec) = sec {
-                let rpc_port = prop.get("rpcport").expect("rpcport");
-                let p2p_port = prop.get("port").expect("port");
-                let prune = prop.get("prune").expect("prune");
-                let rpc_auth = prop.get("rpcauth");
-                if sec == "main" {
-                    assert_eq!(prop.len(), 3);
-                    assert_eq!(rpc_port, "43345");
-                    assert_eq!(p2p_port, "42355");
-                    assert_eq!(prune, "15246");
-                    assert!(rpc_auth.is_none());
-                } else if sec == "regtest" {
-                    assert_eq!(prop.len(), 4);
-                    assert_eq!(rpc_port, "34067");
-                    assert_eq!(p2p_port, "45175");
-                    assert_eq!(prune, "2043");
-                    assert_eq!(rpc_auth, Some("my_user:my_salt$my_pw_hmac"));
-                } else {
-                    panic!("Unexpected section");
-                }
-            } else {
-                assert!(prop.is_empty())
-            }
-        }
+        assert_eq!(conf.to_string(), VALID_CONF);
+    }
+
+    #[test]
+    fn internal_bitcoind_config_parse_errors() {
+        assert!(
+            "# a comment\n; another\n[main]\nrpcport=1\nport=2\nprune=3\n"
+                .parse::<InternalBitcoindConfig>()
+                .is_ok()
+        );
+        assert_eq!(
+            "[main]\nrpcport\n"
+                .parse::<InternalBitcoindConfig>()
+                .expect_err("Line without separator"),
+            InternalBitcoindConfigError::CouldNotParseValue("rpcport".to_string())
+        );
+        assert_eq!(
+            "rpcport=43345\n"
+                .parse::<InternalBitcoindConfig>()
+                .expect_err("Value outside any section"),
+            InternalBitcoindConfigError::UnexpectedSection(
+                "General section should be empty".to_string()
+            )
+        );
+        assert!(matches!(
+            "[dummynet]\nrpcport=43345\n"
+                .parse::<InternalBitcoindConfig>()
+                .expect_err("Unknown network section"),
+            InternalBitcoindConfigError::UnexpectedSection(_)
+        ));
+        assert_eq!(
+            "[main]\nrpcport=43345\nprune=15246\n"
+                .parse::<InternalBitcoindConfig>()
+                .expect_err("Missing port key"),
+            InternalBitcoindConfigError::KeyNotFound("port".to_string())
+        );
     }
 }

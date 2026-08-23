@@ -1,4 +1,4 @@
-use chrono::{Duration, Utc};
+use futures::channel::mpsc::UnboundedSender;
 use liana::{
     descriptors::LianaDescriptor,
     miniscript::{
@@ -17,7 +17,6 @@ use std::{
     fmt::{Debug, Display},
     sync::Arc,
 };
-use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{
     app::{
@@ -133,7 +132,7 @@ impl Backup {
         network: Network,
         config: Arc<Config>,
         wallet: Arc<Wallet>,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         sender: &UnboundedSender<Progress>,
     ) -> Result<Self, Error> {
         let mut proprietary = serde_json::Map::new();
@@ -161,7 +160,7 @@ impl Backup {
 
         let info = daemon.get_info().await?;
 
-        let _ = sender.send(Progress::Progress(20.0));
+        let _ = sender.unbounded_send(Progress::Progress(20.0));
 
         let mut account = Account::new(descriptor);
 
@@ -197,7 +196,7 @@ impl Backup {
             bip329::Labels::new(buff)
         };
 
-        let _ = sender.send(Progress::Progress(30.0));
+        let _ = sender.unbounded_send(Progress::Progress(30.0));
 
         account.labels = Some(labels);
         account.transactions = get_transactions(&daemon)
@@ -206,7 +205,7 @@ impl Backup {
             .map(|tx| miniscript::bitcoin::consensus::encode::serialize_hex(&tx.tx))
             .collect();
 
-        let _ = sender.send(Progress::Progress(40.0));
+        let _ = sender.unbounded_send(Progress::Progress(40.0));
 
         account.psbts = daemon
             .list_spend_transactions(None)
@@ -215,7 +214,7 @@ impl Backup {
             .map(|tx| tx.psbt.to_string())
             .collect();
 
-        let _ = sender.send(Progress::Progress(50.0));
+        let _ = sender.unbounded_send(Progress::Progress(50.0));
 
         let statuses = [
             CoinStatus::Unconfirmed,
@@ -230,7 +229,7 @@ impl Backup {
             .map(|c| (c.outpoint.clone().to_string(), Coin::from(c)))
             .collect();
 
-        let _ = sender.send(Progress::Progress(60.0));
+        let _ = sender.unbounded_send(Progress::Progress(60.0));
 
         Ok(Backup {
             name: Some(name),
@@ -274,7 +273,7 @@ impl Backup {
 }
 
 async fn get_transactions(
-    daemon: &Arc<dyn Daemon + Sync + Send>,
+    daemon: &Arc<crate::daemon::AnyDaemon>,
 ) -> Result<Vec<HistoryTransaction>, Error> {
     let max = match daemon.backend() {
         DaemonBackend::RemoteBackend => DEFAULT_LIMIT as u64,
@@ -283,7 +282,7 @@ async fn get_transactions(
 
     // look 2 hour forward
     // https://github.com/bitcoin/bitcoin/blob/62bd61de110b057cbfd6e31e4d0b727d93119c72/src/chain.h#L29
-    let mut end = ((Utc::now() + Duration::hours(2)).timestamp()) as u32;
+    let mut end = (now().as_secs() + 2 * 3600) as u32;
 
     // store txs in a map to avoid duplicates
     let mut map = HashMap::<Txid, HistoryTransaction>::new();

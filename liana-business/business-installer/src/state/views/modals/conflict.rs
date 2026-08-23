@@ -1,4 +1,4 @@
-use uuid::Uuid;
+use liana_connect::Uuid;
 
 /// Conflict resolution modal state
 /// Shown when a resource being edited is modified or deleted by another user

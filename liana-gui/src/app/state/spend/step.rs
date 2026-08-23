@@ -80,7 +80,7 @@ pub trait Step {
     fn view<'a>(&'a self, cache: &'a Cache) -> Element<'a, view::Message>;
     fn update(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         cache: &Cache,
         message: Message,
     ) -> Task<Message>;
@@ -296,7 +296,7 @@ impl DefineSpend {
     }
     /// redraft calculates the amount left to select and auto selects coins
     /// if the user did not select a coin manually
-    fn redraft(&mut self, daemon: Arc<dyn Daemon + Sync + Send>) {
+    fn redraft(&mut self, daemon: Arc<crate::daemon::AnyDaemon>) {
         if !self.form_values_are_valid(true) || self.exists_duplicate() {
             // The current form details are not valid to draft a spend, so remove any previously
             // calculated amount as it will no longer be valid and could be misleading, e.g. if
@@ -430,7 +430,7 @@ impl DefineSpend {
 
         let feerate_vb = self.feerate.value.parse::<u64>().expect("Checked before");
         let recovery_timelock = self.recovery_timelock;
-        match tokio::runtime::Handle::current().block_on(async {
+        match futures::executor::block_on(async {
             // If recovery timelock is set, create a recovery transaction. Otherwise, a regular spend.
             if let Some(reco_tl) = recovery_timelock {
                 daemon
@@ -612,7 +612,7 @@ impl Step for DefineSpend {
 
     fn update(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         cache: &Cache,
         message: Message,
     ) -> Task<Message> {
@@ -1042,7 +1042,7 @@ impl Recipient {
                     }
                     Err(e) => {
                         // Probably the BTC amount is too large.
-                        tracing::debug!("Could not convert fiat to BTC: {e}");
+                        log::debug!("Could not convert fiat to BTC: {e}");
                         self.fiat_amount = Some(form::Value {
                             value: fiat_amt_str,
                             valid: false,
@@ -1200,7 +1200,7 @@ impl Step for SaveSpend {
 
     fn update(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         cache: &Cache,
         message: Message,
     ) -> Task<Message> {
@@ -1310,7 +1310,7 @@ impl Step for SelectRecoveryPath {
 
     fn update(
         &mut self,
-        _daemon: Arc<dyn Daemon + Sync + Send>,
+        _daemon: Arc<crate::daemon::AnyDaemon>,
         _cache: &Cache,
         message: Message,
     ) -> Task<Message> {

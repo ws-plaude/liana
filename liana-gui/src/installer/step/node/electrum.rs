@@ -1,8 +1,8 @@
 use iced::Task;
 use liana_ui::{component::form, widget::*};
 use lianad::{
+    bwk_electrum::{client::Client, parse_electrum_url, ElectrumScheme},
     config::ElectrumConfig,
-    electrum_client::{self, ElectrumApi},
 };
 
 use crate::{
@@ -70,15 +70,17 @@ impl DefineElectrum {
     }
 
     pub fn ping(&self) -> Result<(), Error> {
-        let builder = electrum_client::Config::builder();
-        let config = builder
-            .timeout(Some(3))
-            .validate_domain(self.validate_domain)
-            .build();
-        let client = electrum_client::Client::from_config(&self.address.value, config)
-            .map_err(|e| Error::Electrum(e.to_string()))?;
-        client
-            .raw_call("server.ping", [])
+        let (host, port, scheme) =
+            parse_electrum_url(&self.address.value).map_err(Error::Electrum)?;
+        let host = host.ok_or_else(|| Error::Electrum("Missing host.".to_string()))?;
+        let port = port.ok_or_else(|| Error::Electrum("Missing port.".to_string()))?;
+        // The client reads the scheme back from the address it is given.
+        let addr = match scheme {
+            ElectrumScheme::Ssl => format!("ssl://{host}"),
+            ElectrumScheme::Tcp => host,
+        };
+        // Creating the client connects, which is what we are checking here.
+        Client::new(&addr, port, self.validate_domain)
             .map_err(|e| Error::Electrum(e.to_string()))?;
         Ok(())
     }

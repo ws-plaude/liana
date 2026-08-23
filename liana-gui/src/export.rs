@@ -2,18 +2,21 @@ use std::{
     collections::HashMap,
     fmt::Display,
     fs::{self, File},
+    future::Future,
     io::{Read, Write},
     path::{Path, PathBuf},
     str::FromStr,
-    sync::{Arc, Mutex},
-    time,
+    sync::Arc,
 };
 
 use encrypted_backup::{descriptor::dpk_to_pk, Decrypted, EncryptedBackup};
-use tokio::sync::mpsc::{channel, unbounded_channel, Sender, UnboundedReceiver, UnboundedSender};
+use futures::{
+    channel::mpsc::{channel, unbounded, Sender, UnboundedReceiver, UnboundedSender},
+    future::{self, AbortHandle, Abortable},
+    pin_mut, select, FutureExt, SinkExt, Stream, StreamExt,
+};
 
-use async_hwi::bitbox::api::btc::Fingerprint;
-use chrono::{DateTime, Duration, Utc};
+use bwk_hwi::bitbox::api::btc::Fingerprint;
 use liana::{
     descriptors::{bip341_nums, LianaDescriptor},
     miniscript::{
@@ -25,12 +28,6 @@ use lianad::{
     bip329::{error::ExportError, Labels},
     commands::LabelItem,
 };
-use tokio::{
-    task::{JoinError, JoinHandle},
-    time::sleep,
-};
-
-use iced::futures::{SinkExt, Stream};
 
 use crate::{
     app::{
@@ -46,21 +43,23 @@ use crate::{
         Daemon, DaemonBackend, DaemonError,
     },
     dir::{LianaDirectory, NetworkDirectory},
+    file_picker,
     node::bitcoind::Bitcoind,
     services::connect::client::backend::DEFAULT_LIMIT,
+    utils::now,
 };
 
 const DUMP_LABELS_LIMIT: u32 = 100;
 
 macro_rules! send_progress {
     ($sender:ident, $progress:ident) => {
-        if let Err(e) = $sender.send(Progress::$progress) {
-            tracing::error!("ImportExport fail to send msg: {}", e);
+        if let Err(e) = $sender.unbounded_send(Progress::$progress) {
+            log::error!("ImportExport fail to send msg: {}", e);
         }
     };
     ($sender:ident, $progress:ident($val:expr)) => {
-        if let Err(e) = $sender.send(Progress::$progress($val)) {
-            tracing::error!("ImportExport fail to send msg: {}", e);
+        if let Err(e) = $sender.unbounded_send(Progress::$progress($val)) {
+            log::error!("ImportExport fail to send msg: {}", e);
         }
     };
 }
@@ -82,6 +81,7 @@ pub enum ImportExportMessage {
     TimedOut,
     UserStop,
     Path(Option<PathBuf>),
+    FilePicker(file_picker::Message),
     Close,
     Overwrite,
     Ignore,
@@ -113,8 +113,6 @@ pub enum Error {
     Io(String),
     HandleLost,
     UnexpectedEnd,
-    JoinError(String),
-    ChannelLost,
     NoParentDir,
     Daemon(String),
     TxTimeMissing,
@@ -140,8 +138,6 @@ impl Display for Error {
             Error::Io(e) => write!(f, "ImportExport Io Error: {e}"),
             Error::HandleLost => write!(f, "ImportExport: subprocess handle lost"),
             Error::UnexpectedEnd => write!(f, "ImportExport: unexpected end of the process"),
-            Error::JoinError(e) => write!(f, "ImportExport fail to handle.join(): {e} "),
-            Error::ChannelLost => write!(f, "ImportExport: the channel have been closed"),
             Error::NoParentDir => write!(f, "ImportExport: there is no parent dir"),
             Error::Daemon(e) => write!(f, "ImportExport daemon error: {e}"),
             Error::TxTimeMissing => write!(f, "ImportExport: transaction block height missing"),
@@ -207,12 +203,6 @@ impl ImportExportType {
     }
 }
 
-impl From<JoinError> for Error {
-    fn from(value: JoinError) -> Self {
-        Error::JoinError(format!("{value:?}"))
-    }
-}
-
 impl From<std::io::Error> for Error {
     fn from(value: std::io::Error) -> Self {
         Error::Io(format!("{value:?}"))
@@ -237,16 +227,9 @@ impl From<encrypted_backup::Error> for Error {
     }
 }
 
-#[derive(Debug)]
-pub enum Status {
-    Init,
-    Running,
-    Stopped,
-}
-
 #[derive(Debug, Clone)]
 pub enum Progress {
-    Started(Arc<Mutex<JoinHandle<()>>>),
+    Started(AbortHandle),
     Progress(f32),
     Ended,
     Finished,
@@ -272,23 +255,21 @@ pub enum Progress {
 pub struct Export {
     pub receiver: UnboundedReceiver<Progress>,
     pub sender: Option<UnboundedSender<Progress>>,
-    pub handle: Option<Arc<Mutex<JoinHandle<()>>>>,
-    pub daemon: Option<Arc<dyn Daemon + Sync + Send>>,
+    pub daemon: Option<Arc<crate::daemon::AnyDaemon>>,
     pub path: Box<PathBuf>,
     pub export_type: ImportExportType,
 }
 
 impl Export {
     pub fn new(
-        daemon: Option<Arc<dyn Daemon + Sync + Send>>,
+        daemon: Option<Arc<crate::daemon::AnyDaemon>>,
         path: Box<PathBuf>,
         export_type: ImportExportType,
     ) -> Self {
-        let (sender, receiver) = unbounded_channel();
+        let (sender, receiver) = unbounded();
         Export {
             receiver,
             sender: Some(sender),
-            handle: None,
             daemon,
             path,
             export_type,
@@ -298,7 +279,7 @@ impl Export {
     pub async fn export_logic(
         export_type: ImportExportType,
         sender: UnboundedSender<Progress>,
-        daemon: Option<Arc<dyn Daemon + Sync + Send>>,
+        daemon: Option<Arc<crate::daemon::AnyDaemon>>,
         path: PathBuf,
     ) {
         if let Err(e) = match export_type {
@@ -334,110 +315,77 @@ impl Export {
             } => import_backup(&network_dir, wallet, &sender, path, daemon).await,
             ImportExportType::FromBackup => from_backup(&sender, path).await,
         } {
-            if let Err(e) = sender.send(Progress::Error(e)) {
-                tracing::error!("Import/Export fail to send msg: {}", e);
+            if let Err(e) = sender.unbounded_send(Progress::Error(e)) {
+                log::error!("Import/Export fail to send msg: {e}");
             }
         }
     }
 
-    pub async fn start(&mut self) {
-        if let (true, Some(sender)) = (self.handle.is_none(), self.sender.take()) {
-            let daemon = self.daemon.clone();
-            let path = self.path.clone();
-
-            let cloned_sender = sender.clone();
-            let export_type = self.export_type.clone();
-            let handle = tokio::spawn(async move {
-                Self::export_logic(export_type, cloned_sender, daemon, *path).await;
-            });
-            let handle = Arc::new(Mutex::new(handle));
-
-            let cloned_sender = sender.clone();
-            // we send the handle to the GUI so we can kill the thread on timeout
-            // or user cancel action
-            send_progress!(cloned_sender, Started(handle.clone()));
-            self.handle = Some(handle);
-        } else {
-            tracing::error!("ExportState can start only once!");
-        }
-    }
-    pub fn state(&self) -> Status {
-        match (&self.sender, &self.handle) {
-            (Some(_), None) => Status::Init,
-            (None, Some(_)) => Status::Running,
-            (None, None) => Status::Stopped,
-            _ => unreachable!(),
-        }
+    /// Builds the export future, which the caller has to drive, and hands its abort handle to the
+    /// GUI so it can stop the export on timeout or on user cancel.
+    pub fn start(&mut self) -> Option<Abortable<impl Future<Output = ()>>> {
+        let Some(sender) = self.sender.take() else {
+            log::error!("ExportState can start only once!");
+            return None;
+        };
+        let daemon = self.daemon.clone();
+        let path = self.path.clone();
+        let export_type = self.export_type.clone();
+        let logic_sender = sender.clone();
+        let (task, abort) = future::abortable(async move {
+            Self::export_logic(export_type, logic_sender, daemon, *path).await;
+        });
+        send_progress!(sender, Started(abort));
+        Some(task)
     }
 }
 
 pub fn export_subscription(
-    daemon: Option<Arc<dyn Daemon + Sync + Send>>,
+    daemon: Option<Arc<crate::daemon::AnyDaemon>>,
     path: PathBuf,
     export_type: ImportExportType,
 ) -> impl Stream<Item = Progress> {
-    use iced::futures::channel::mpsc::Sender;
     iced::stream::channel(100, move |mut output: Sender<Progress>| async move {
         let mut state = Export::new(daemon, Box::new(path), export_type);
+        let Some(task) = state.start() else {
+            if let Err(e) = output.send(Progress::Error(Error::HandleLost)).await {
+                log::error!("export_subscription() fail to send message: {e}");
+            }
+            return;
+        };
+        // The export future has no executor of its own: it advances only while this stream is
+        // polled, next to the channel it reports its progress on.
+        let task = task.fuse();
+        pin_mut!(task);
         loop {
-            match state.state() {
-                Status::Init => {
-                    state.start().await;
-                }
-                Status::Stopped => {
-                    break;
-                }
-                Status::Running => {}
-            }
-            let msg = state.receiver.try_recv();
-            let disconnected = match msg {
-                Ok(m) => {
-                    if let Err(e) = output.send(m).await {
-                        tracing::error!("export_subscription() fail to send message: {}", e);
+            let progress = select! {
+                _ = task => None,
+                msg = state.receiver.next() => msg,
+            };
+            match progress {
+                Some(msg) => {
+                    if let Err(e) = output.send(msg).await {
+                        log::error!("export_subscription() fail to send message: {e}");
                     }
-                    continue;
                 }
-                Err(e) => match e {
-                    tokio::sync::mpsc::error::TryRecvError::Empty => false,
-                    tokio::sync::mpsc::error::TryRecvError::Disconnected => true,
-                },
-            };
-
-            let handle = match state.handle.take() {
-                Some(h) => h,
-                None => {
-                    if let Err(e) = output.send(Progress::Error(Error::HandleLost)).await {
-                        tracing::error!("export_subscription() fail to send message: {}", e);
-                    }
-                    continue;
-                }
-            };
-            let msg = {
-                let h = handle.lock().expect("should not fail");
-                if h.is_finished() {
-                    Some(Progress::Finished)
-                } else if disconnected {
-                    Some(Progress::Error(Error::ChannelLost))
-                } else {
-                    None
-                }
-            };
-            if let Some(msg) = msg {
-                if let Err(e) = output.send(msg).await {
-                    tracing::error!("export_subscription() fail to send message: {}", e);
-                }
-                continue;
+                None => break,
             }
-            state.handle = Some(handle);
-
-            sleep(time::Duration::from_millis(100)).await;
+        }
+        // Whatever the export queued on its way out is still worth reporting.
+        while let Ok(Some(msg)) = state.receiver.try_next() {
+            if let Err(e) = output.send(msg).await {
+                log::error!("export_subscription() fail to send message: {e}");
+            }
+        }
+        if let Err(e) = output.send(Progress::Finished).await {
+            log::error!("export_subscription() fail to send message: {e}");
         }
     })
 }
 
 pub async fn export_transactions(
     sender: &UnboundedSender<Progress>,
-    daemon: Option<Arc<dyn Daemon + Sync + Send>>,
+    daemon: Option<Arc<crate::daemon::AnyDaemon>>,
     path: PathBuf,
 ) -> Result<(), Error> {
     let daemon = daemon.ok_or(Error::DaemonMissing)?;
@@ -448,7 +396,7 @@ pub async fn export_transactions(
 
     // look 2 hour forward
     // https://github.com/bitcoin/bitcoin/blob/62bd61de110b057cbfd6e31e4d0b727d93119c72/src/chain.h#L29
-    let mut end = ((Utc::now() + Duration::hours(2)).timestamp()) as u32;
+    let mut end = (now().as_secs() + 2 * 3600) as u32;
     let total_txs = daemon
         .list_confirmed_txs(0, end, u32::MAX as u64)
         .await?
@@ -525,16 +473,7 @@ pub async fn export_transactions(
     for mut tx in txs {
         let date_time = tx
             .time
-            .map(|t| {
-                let mut str = DateTime::from_timestamp(t as i64, 0)
-                    .expect("bitcoin timestamp")
-                    .to_rfc3339();
-                //str has the form `1996-12-19T16:39:57-08:00`
-                //                            ^        ^^^^^^
-                //          replace `T` by ` `|           | drop this part
-                str = str.replace("T", " ");
-                str[0..(str.len() - 6)].to_string()
-            })
+            .map(|t| liana_ui::date::format_export_date_time(t as i64))
             .unwrap_or("".to_string());
 
         let txid = tx.txid.clone().to_string();
@@ -652,7 +591,7 @@ pub async fn export_encrypted_descriptor(
 }
 
 pub async fn import_psbt(
-    daemon: Option<Arc<dyn Daemon + Sync + Send>>,
+    daemon: Option<Arc<crate::daemon::AnyDaemon>>,
     sender: &UnboundedSender<Progress>,
     path: PathBuf,
     txid: Option<Txid>,
@@ -816,7 +755,7 @@ pub async fn import_backup(
     wallet: Arc<Wallet>,
     sender: &UnboundedSender<Progress>,
     path: PathBuf,
-    daemon: Option<Arc<dyn Daemon + Sync + Send>>,
+    daemon: Option<Arc<crate::daemon::AnyDaemon>>,
 ) -> Result<(), Error> {
     let daemon = daemon.ok_or(Error::DaemonMissing)?;
 
@@ -917,7 +856,7 @@ pub async fn import_backup(
             }
         }
         if conflict {
-            write_labels = match ack_receiver.recv().await {
+            write_labels = match ack_receiver.next().await {
                 Some(b) => b,
                 None => {
                     return Err(Error::BackupImport("Failed to receive labels ACK".into()));
@@ -962,7 +901,7 @@ pub async fn import_backup(
         }
         if conflict {
             // wait for the user ACK/NACK
-            write_aliases = match ack_receiver.recv().await {
+            write_aliases = match ack_receiver.next().await {
                 Some(a) => a,
                 None => {
                     return Err(Error::BackupImport("Failed to receive aliases ACK".into()));
@@ -1228,7 +1167,7 @@ pub async fn import_backup_at_launch(
     cache: Cache,
     wallet: Arc<Wallet>,
     config: Config,
-    daemon: Arc<dyn Daemon + Sync + Send>,
+    daemon: Arc<crate::daemon::AnyDaemon>,
     datadir: LianaDirectory,
     internal_bitcoind: Option<Bitcoind>,
     backup: Backup,
@@ -1237,7 +1176,7 @@ pub async fn import_backup_at_launch(
         Cache,
         Arc<Wallet>,
         Config,
-        Arc<dyn Daemon + Sync + Send>,
+        Arc<crate::daemon::AnyDaemon>,
         LianaDirectory,
         Option<Bitcoind>,
     ),
@@ -1319,7 +1258,7 @@ pub async fn import_backup_at_launch(
     // import PSBTs
     for psbt in psbts {
         if let Err(e) = daemon.update_spend_tx(&psbt).await {
-            tracing::error!("Failed to restore PSBT: {e}")
+            log::error!("Failed to restore PSBT: {e}")
         }
     }
 
@@ -1328,7 +1267,7 @@ pub async fn import_backup_at_launch(
 
 pub async fn export_labels(
     sender: &UnboundedSender<Progress>,
-    daemon: Option<Arc<dyn Daemon + Sync + Send>>,
+    daemon: Option<Arc<crate::daemon::AnyDaemon>>,
     path: PathBuf,
 ) -> Result<(), Error> {
     let daemon = daemon.ok_or(Error::DaemonMissing)?;
@@ -1356,30 +1295,12 @@ pub async fn export_labels(
     Ok(())
 }
 
-pub async fn get_path(filename: String, write: bool) -> Option<PathBuf> {
-    if write {
-        rfd::AsyncFileDialog::new()
-            .set_title("Choose a location to export...")
-            .set_file_name(filename)
-            .save_file()
-            .await
-            .map(|fh| fh.path().to_path_buf())
-    } else {
-        rfd::AsyncFileDialog::new()
-            .set_title("Choose a file to import...")
-            .set_file_name(filename)
-            .pick_file()
-            .await
-            .map(|fh| fh.path().to_path_buf())
-    }
-}
-
 pub async fn app_backup(
     datadir: LianaDirectory,
     network: Network,
     config: Arc<Config>,
     wallet: Arc<Wallet>,
-    daemon: Arc<dyn Daemon + Sync + Send>,
+    daemon: Arc<crate::daemon::AnyDaemon>,
     sender: &UnboundedSender<Progress>,
 ) -> Result<String, backup::Error> {
     let backup = Backup::from_app(datadir, network, config, wallet, daemon, sender).await?;
@@ -1391,7 +1312,7 @@ pub async fn app_backup_export(
     network: Network,
     config: Arc<Config>,
     wallet: Arc<Wallet>,
-    daemon: Arc<dyn Daemon + Sync + Send>,
+    daemon: Arc<crate::daemon::AnyDaemon>,
     path: PathBuf,
     sender: &UnboundedSender<Progress>,
 ) -> Result<(), Error> {
@@ -1405,42 +1326,48 @@ pub async fn app_backup_export(
 mod tests {
     use std::env;
 
+    use futures::executor::block_on;
+
     use encrypted_backup::Version;
 
     use super::*;
 
-    #[tokio::test]
-    async fn test_import_descriptor_from_file() {
-        let (sender, mut receiver) = unbounded_channel();
-        let path = env::current_dir()
-            .unwrap()
-            .join("test_assets")
-            .join("liana-jz5sm0xn.txt");
-        println!("path: {}", path.display());
-        import_descriptor(&sender, path).await.unwrap();
-        let _msg = receiver.try_recv().unwrap();
-        assert!(matches!(Progress::Progress(100.0), _msg));
-        let raw_descriptor = "wsh(or_d(pk([8a550171/48'/1'/0'/2']tpubDFnCs5ZaCqopaNhgLCiXAwbkaBdcnuMt1VFoPsRpUrpidyvzG67MYjkfxw6HnTBhHqeU3xw2ioNBVcWY3jXwGhSyppEQvtn38GsL7RH1eef/<0;1>/*),and_v(v:pkh([8a550171/48'/1'/0'/2']tpubDFnCs5ZaCqopaNhgLCiXAwbkaBdcnuMt1VFoPsRpUrpidyvzG67MYjkfxw6HnTBhHqeU3xw2ioNBVcWY3jXwGhSyppEQvtn38GsL7RH1eef/<2;3>/*),older(52596))))#jz5sm0xn";
-        let descr = LianaDescriptor::from_str(raw_descriptor).unwrap();
-        let _msg = receiver.try_recv().unwrap();
-        assert!(matches!(Progress::Descriptor(descr), _msg));
+    #[test]
+    fn test_import_descriptor_from_file() {
+        block_on(async {
+            let (sender, mut receiver) = unbounded();
+            let path = env::current_dir()
+                .unwrap()
+                .join("test_assets")
+                .join("liana-jz5sm0xn.txt");
+            println!("path: {}", path.display());
+            import_descriptor(&sender, path).await.unwrap();
+            let _msg = receiver.try_next().unwrap();
+            assert!(matches!(Progress::Progress(100.0), _msg));
+            let raw_descriptor = "wsh(or_d(pk([8a550171/48'/1'/0'/2']tpubDFnCs5ZaCqopaNhgLCiXAwbkaBdcnuMt1VFoPsRpUrpidyvzG67MYjkfxw6HnTBhHqeU3xw2ioNBVcWY3jXwGhSyppEQvtn38GsL7RH1eef/<0;1>/*),and_v(v:pkh([8a550171/48'/1'/0'/2']tpubDFnCs5ZaCqopaNhgLCiXAwbkaBdcnuMt1VFoPsRpUrpidyvzG67MYjkfxw6HnTBhHqeU3xw2ioNBVcWY3jXwGhSyppEQvtn38GsL7RH1eef/<2;3>/*),older(52596))))#jz5sm0xn";
+            let descr = LianaDescriptor::from_str(raw_descriptor).unwrap();
+            let _msg = receiver.try_next().unwrap();
+            assert!(matches!(Progress::Descriptor(descr), _msg));
+        });
     }
 
-    #[tokio::test]
-    async fn test_import_descriptor_from_backup_file() {
-        let (sender, mut receiver) = unbounded_channel();
-        let path = env::current_dir()
-            .unwrap()
-            .join("test_assets")
-            .join("liana-backup-2025-06-23T13-23-54.json");
-        println!("path: {}", path.display());
-        import_descriptor(&sender, path).await.unwrap();
-        let _msg = receiver.try_recv().unwrap();
-        assert!(matches!(Progress::Progress(100.0), _msg));
-        let raw_descriptor = "wsh(or_d(pk([8a550171/48'/1'/0'/2']tpubDFnCs5ZaCqopaNhgLCiXAwbkaBdcnuMt1VFoPsRpUrpidyvzG67MYjkfxw6HnTBhHqeU3xw2ioNBVcWY3jXwGhSyppEQvtn38GsL7RH1eef/<0;1>/*),and_v(v:pkh([8a550171/48'/1'/0'/2']tpubDFnCs5ZaCqopaNhgLCiXAwbkaBdcnuMt1VFoPsRpUrpidyvzG67MYjkfxw6HnTBhHqeU3xw2ioNBVcWY3jXwGhSyppEQvtn38GsL7RH1eef/<2;3>/*),older(52596))))#jz5sm0xn";
-        let descr = LianaDescriptor::from_str(raw_descriptor).unwrap();
-        let _msg = receiver.try_recv().unwrap();
-        assert!(matches!(Progress::Descriptor(descr), _msg));
+    #[test]
+    fn test_import_descriptor_from_backup_file() {
+        block_on(async {
+            let (sender, mut receiver) = unbounded();
+            let path = env::current_dir()
+                .unwrap()
+                .join("test_assets")
+                .join("liana-backup-2025-06-23T13-23-54.json");
+            println!("path: {}", path.display());
+            import_descriptor(&sender, path).await.unwrap();
+            let _msg = receiver.try_next().unwrap();
+            assert!(matches!(Progress::Progress(100.0), _msg));
+            let raw_descriptor = "wsh(or_d(pk([8a550171/48'/1'/0'/2']tpubDFnCs5ZaCqopaNhgLCiXAwbkaBdcnuMt1VFoPsRpUrpidyvzG67MYjkfxw6HnTBhHqeU3xw2ioNBVcWY3jXwGhSyppEQvtn38GsL7RH1eef/<0;1>/*),and_v(v:pkh([8a550171/48'/1'/0'/2']tpubDFnCs5ZaCqopaNhgLCiXAwbkaBdcnuMt1VFoPsRpUrpidyvzG67MYjkfxw6HnTBhHqeU3xw2ioNBVcWY3jXwGhSyppEQvtn38GsL7RH1eef/<2;3>/*),older(52596))))#jz5sm0xn";
+            let descr = LianaDescriptor::from_str(raw_descriptor).unwrap();
+            let _msg = receiver.try_next().unwrap();
+            assert!(matches!(Progress::Descriptor(descr), _msg));
+        });
     }
 
     #[test]

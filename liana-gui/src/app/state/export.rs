@@ -1,29 +1,28 @@
-use std::{
-    path::PathBuf,
-    sync::{Arc, Mutex},
-};
+use std::{path::PathBuf, sync::Arc};
 
+use futures::{future::AbortHandle, SinkExt};
 use iced::{Subscription, Task};
-use liana_ui::{widget::modal::Modal, widget::Element};
-use tokio::task::JoinHandle;
+use liana_ui::{date, widget::modal::Modal, widget::Element};
 
 use crate::{
     app::{
         self,
         view::{export::export_modal, Close},
     },
-    daemon::Daemon,
-    export::{self, get_path, ImportExportMessage, ImportExportState, ImportExportType, Progress},
+    export::{self, ImportExportMessage, ImportExportState, ImportExportType, Progress},
+    file_picker::{FilePicker, Outcome},
 };
 
 #[derive(Debug)]
 pub struct ExportModal {
     path: Option<PathBuf>,
-    handle: Option<Arc<Mutex<JoinHandle<()>>>>,
+    handle: Option<AbortHandle>,
     state: ImportExportState,
     error: Option<export::Error>,
-    daemon: Option<Arc<dyn Daemon + Sync + Send>>,
+    daemon: Option<Arc<crate::daemon::AnyDaemon>>,
     import_export_type: ImportExportType,
+    /// Shown instead of the export view while the user is choosing the path.
+    file_picker: Option<FilePicker>,
 }
 
 impl app::state::psbt::Modal for ExportModal {
@@ -35,7 +34,7 @@ impl app::state::psbt::Modal for ExportModal {
 
     fn update(
         &mut self,
-        _daemon: Arc<dyn Daemon + Sync + Send>,
+        _daemon: Arc<crate::daemon::AnyDaemon>,
         message: app::Message,
         _tx: &mut crate::daemon::model::SpendTx,
     ) -> Task<app::Message> {
@@ -57,7 +56,7 @@ impl app::state::psbt::Modal for ExportModal {
 impl ExportModal {
     #[allow(clippy::new_without_default)]
     pub fn new(
-        daemon: Option<Arc<dyn Daemon + Sync + Send>>,
+        daemon: Option<Arc<crate::daemon::AnyDaemon>>,
         export_type: ImportExportType,
     ) -> Self {
         Self {
@@ -67,6 +66,7 @@ impl ExportModal {
             error: None,
             daemon,
             import_export_type: export_type,
+            file_picker: None,
         }
     }
 
@@ -88,7 +88,7 @@ impl ExportModal {
     }
 
     pub fn default_filename(&self) -> String {
-        let date = chrono::Local::now().format("%Y-%m-%dT%H-%M-%S");
+        let date = date::format_filename_date_time(crate::utils::now().as_secs() as i64);
         match &self.import_export_type {
             ImportExportType::Transactions => {
                 format!("liana-txs-{date}.csv")
@@ -117,10 +117,18 @@ impl ExportModal {
         }
     }
 
-    pub fn launch<M: From<ImportExportMessage> + Send + 'static>(&self, write: bool) -> Task<M> {
-        Task::perform(get_path(self.default_filename(), write), move |m| {
-            ImportExportMessage::Path(m).into()
-        })
+    /// Show the file picker so the user chooses the path to import from or export to.
+    pub fn launch<M: From<ImportExportMessage> + Send + 'static>(
+        &mut self,
+        write: bool,
+    ) -> Task<M> {
+        let start_dir = FilePicker::default_dir();
+        self.file_picker = Some(if write {
+            FilePicker::save(start_dir, self.default_filename())
+        } else {
+            FilePicker::open(start_dir, None)
+        });
+        Task::none()
     }
 
     pub fn update<M: From<ImportExportMessage> + Send + 'static>(
@@ -199,6 +207,17 @@ impl ExportModal {
             ImportExportMessage::UserStop => {
                 self.stop(ImportExportState::Aborted);
             }
+            ImportExportMessage::FilePicker(m) => {
+                if let Some(picker) = &mut self.file_picker {
+                    let path = match picker.update(m) {
+                        Some(Outcome::Chosen(path)) => Some(path),
+                        Some(Outcome::Cancelled) => None,
+                        None => return Task::none(),
+                    };
+                    self.file_picker = None;
+                    return Task::done(ImportExportMessage::Path(path).into());
+                }
+            }
             ImportExportMessage::Path(p) => {
                 if let Some(path) = p {
                     self.path = Some(path);
@@ -215,24 +234,20 @@ impl ExportModal {
                     ..
                 } = &mut self.import_export_type
                 {
-                    if let Some(sender) = overwrite_labels.take() {
+                    if let Some(mut sender) = overwrite_labels.take() {
                         return Task::perform(
                             async move {
                                 if sender.send(true).await.is_err() {
-                                    tracing::error!(
-                                        "ExportModal.update(): fail to send labels NACK"
-                                    );
+                                    log::error!("ExportModal.update(): fail to send labels NACK");
                                 }
                             },
                             |_| ImportExportMessage::Ignore.into(),
                         );
-                    } else if let Some(sender) = overwrite_aliases.take() {
+                    } else if let Some(mut sender) = overwrite_aliases.take() {
                         return Task::perform(
                             async move {
                                 if sender.send(true).await.is_err() {
-                                    tracing::error!(
-                                        "ExportModal.update(): fail to send aliases NACK"
-                                    );
+                                    log::error!("ExportModal.update(): fail to send aliases NACK");
                                 }
                             },
                             |_| ImportExportMessage::Ignore.into(),
@@ -247,24 +262,20 @@ impl ExportModal {
                     ..
                 } = &mut self.import_export_type
                 {
-                    if let Some(sender) = overwrite_labels.take() {
+                    if let Some(mut sender) = overwrite_labels.take() {
                         return Task::perform(
                             async move {
                                 if sender.send(false).await.is_err() {
-                                    tracing::error!(
-                                        "ExportModal.update(): fail to send labels NACK"
-                                    );
+                                    log::error!("ExportModal.update(): fail to send labels NACK");
                                 }
                             },
                             |_| ImportExportMessage::Ignore.into(),
                         );
-                    } else if let Some(sender) = overwrite_aliases.take() {
+                    } else if let Some(mut sender) = overwrite_aliases.take() {
                         return Task::perform(
                             async move {
                                 if sender.send(false).await.is_err() {
-                                    tracing::error!(
-                                        "ExportModal.update(): fail to send aliases NACK"
-                                    );
+                                    log::error!("ExportModal.update(): fail to send aliases NACK");
                                 }
                             },
                             |_| ImportExportMessage::Ignore.into(),
@@ -282,15 +293,18 @@ impl ExportModal {
     where
         M: 'a + Close + Clone + From<export::ImportExportMessage> + 'static,
     {
-        let modal = Modal::new(
-            content,
-            export_modal(
+        let overlay = match &self.file_picker {
+            Some(picker) => picker
+                .view()
+                .map(|m| ImportExportMessage::FilePicker(m).into()),
+            None => export_modal(
                 &self.state,
                 self.error.as_ref(),
                 self.modal_title(),
                 &self.import_export_type,
             ),
-        );
+        };
+        let modal = Modal::new(content, overlay);
         match self.state {
             ImportExportState::TimedOut
             | ImportExportState::Aborted
@@ -307,7 +321,7 @@ impl ExportModal {
 
     pub fn stop(&mut self, state: ImportExportState) {
         if let Some(handle) = self.handle.take() {
-            handle.lock().expect("poisoned").abort();
+            handle.abort();
             self.state = state;
         }
     }

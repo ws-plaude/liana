@@ -8,8 +8,6 @@ use std::fmt::Debug;
 use std::io::ErrorKind;
 use std::iter::FromIterator;
 
-use async_trait::async_trait;
-
 use liana::miniscript::bitcoin::{
     address,
     bip32::{ChildNumber, Fingerprint},
@@ -123,7 +121,7 @@ impl DaemonBackend {
     }
 }
 
-#[async_trait]
+#[allow(async_fn_in_trait)]
 pub trait Daemon: Debug {
     fn backend(&self) -> DaemonBackend;
     fn config(&self) -> Option<&Config>;
@@ -502,5 +500,334 @@ mod tests {
 
         // Absent medium stays absent.
         assert_eq!(FeerateEstimate::new(1, None, 5).medium, None);
+    }
+}
+
+/// The concrete daemons, dispatched by value.
+///
+/// `Daemon` has `async` methods, which are not dyn-compatible, so callers hold
+/// this instead of a trait object.
+#[derive(Debug)]
+pub enum AnyDaemon {
+    Embedded(Box<embedded::EmbeddedDaemon>),
+    Lianad(client::Lianad<client::jsonrpc::JsonRPCClient>),
+    Backend(Box<crate::services::connect::client::backend::BackendWalletClient>),
+    #[cfg(test)]
+    Mock(client::Lianad<crate::utils::mock::DaemonClient>),
+}
+
+impl Daemon for AnyDaemon {
+    fn backend(&self) -> DaemonBackend {
+        match self {
+            Self::Embedded(daemon) => daemon.backend(),
+            Self::Lianad(daemon) => daemon.backend(),
+            Self::Backend(daemon) => daemon.backend(),
+            #[cfg(test)]
+            Self::Mock(daemon) => daemon.backend(),
+        }
+    }
+
+    fn config(&self) -> Option<&Config> {
+        match self {
+            Self::Embedded(daemon) => daemon.config(),
+            Self::Lianad(daemon) => daemon.config(),
+            Self::Backend(daemon) => daemon.config(),
+            #[cfg(test)]
+            Self::Mock(daemon) => daemon.config(),
+        }
+    }
+
+    async fn is_alive(
+        &self,
+        datadir: &crate::dir::LianaDirectory,
+        network: Network,
+    ) -> Result<(), DaemonError> {
+        match self {
+            Self::Embedded(daemon) => daemon.is_alive(datadir, network).await,
+            Self::Lianad(daemon) => daemon.is_alive(datadir, network).await,
+            Self::Backend(daemon) => daemon.is_alive(datadir, network).await,
+            #[cfg(test)]
+            Self::Mock(daemon) => daemon.is_alive(datadir, network).await,
+        }
+    }
+
+    async fn stop(&self) -> Result<(), DaemonError> {
+        match self {
+            Self::Embedded(daemon) => daemon.stop().await,
+            Self::Lianad(daemon) => daemon.stop().await,
+            Self::Backend(daemon) => daemon.stop().await,
+            #[cfg(test)]
+            Self::Mock(daemon) => daemon.stop().await,
+        }
+    }
+
+    async fn get_info(&self) -> Result<model::GetInfoResult, DaemonError> {
+        match self {
+            Self::Embedded(daemon) => daemon.get_info().await,
+            Self::Lianad(daemon) => daemon.get_info().await,
+            Self::Backend(daemon) => daemon.get_info().await,
+            #[cfg(test)]
+            Self::Mock(daemon) => daemon.get_info().await,
+        }
+    }
+
+    async fn get_new_address(&self) -> Result<model::GetAddressResult, DaemonError> {
+        match self {
+            Self::Embedded(daemon) => daemon.get_new_address().await,
+            Self::Lianad(daemon) => daemon.get_new_address().await,
+            Self::Backend(daemon) => daemon.get_new_address().await,
+            #[cfg(test)]
+            Self::Mock(daemon) => daemon.get_new_address().await,
+        }
+    }
+
+    async fn list_revealed_addresses(
+        &self,
+        is_change: bool,
+        exclude_used: bool,
+        limit: usize,
+        start_index: Option<ChildNumber>,
+    ) -> Result<model::ListRevealedAddressesResult, DaemonError> {
+        match self {
+            Self::Embedded(daemon) => {
+                daemon
+                    .list_revealed_addresses(is_change, exclude_used, limit, start_index)
+                    .await
+            }
+            Self::Lianad(daemon) => {
+                daemon
+                    .list_revealed_addresses(is_change, exclude_used, limit, start_index)
+                    .await
+            }
+            Self::Backend(daemon) => {
+                daemon
+                    .list_revealed_addresses(is_change, exclude_used, limit, start_index)
+                    .await
+            }
+            #[cfg(test)]
+            Self::Mock(daemon) => {
+                daemon
+                    .list_revealed_addresses(is_change, exclude_used, limit, start_index)
+                    .await
+            }
+        }
+    }
+
+    async fn update_deriv_indexes(
+        &self,
+        receive: Option<u32>,
+        change: Option<u32>,
+    ) -> Result<UpdateDerivIndexesResult, DaemonError> {
+        match self {
+            Self::Embedded(daemon) => daemon.update_deriv_indexes(receive, change).await,
+            Self::Lianad(daemon) => daemon.update_deriv_indexes(receive, change).await,
+            Self::Backend(daemon) => daemon.update_deriv_indexes(receive, change).await,
+            #[cfg(test)]
+            Self::Mock(daemon) => daemon.update_deriv_indexes(receive, change).await,
+        }
+    }
+
+    async fn list_coins(
+        &self,
+        statuses: &[CoinStatus],
+        outpoints: &[OutPoint],
+    ) -> Result<model::ListCoinsResult, DaemonError> {
+        match self {
+            Self::Embedded(daemon) => daemon.list_coins(statuses, outpoints).await,
+            Self::Lianad(daemon) => daemon.list_coins(statuses, outpoints).await,
+            Self::Backend(daemon) => daemon.list_coins(statuses, outpoints).await,
+            #[cfg(test)]
+            Self::Mock(daemon) => daemon.list_coins(statuses, outpoints).await,
+        }
+    }
+
+    async fn list_spend_txs(&self) -> Result<model::ListSpendResult, DaemonError> {
+        match self {
+            Self::Embedded(daemon) => daemon.list_spend_txs().await,
+            Self::Lianad(daemon) => daemon.list_spend_txs().await,
+            Self::Backend(daemon) => daemon.list_spend_txs().await,
+            #[cfg(test)]
+            Self::Mock(daemon) => daemon.list_spend_txs().await,
+        }
+    }
+
+    async fn create_spend_tx(
+        &self,
+        coins_outpoints: &[OutPoint],
+        destinations: &HashMap<Address<address::NetworkUnchecked>, u64>,
+        feerate_vb: u64,
+        change_address: Option<Address<address::NetworkUnchecked>>,
+    ) -> Result<model::CreateSpendResult, DaemonError> {
+        match self {
+            Self::Embedded(daemon) => {
+                daemon
+                    .create_spend_tx(coins_outpoints, destinations, feerate_vb, change_address)
+                    .await
+            }
+            Self::Lianad(daemon) => {
+                daemon
+                    .create_spend_tx(coins_outpoints, destinations, feerate_vb, change_address)
+                    .await
+            }
+            Self::Backend(daemon) => {
+                daemon
+                    .create_spend_tx(coins_outpoints, destinations, feerate_vb, change_address)
+                    .await
+            }
+            #[cfg(test)]
+            Self::Mock(daemon) => {
+                daemon
+                    .create_spend_tx(coins_outpoints, destinations, feerate_vb, change_address)
+                    .await
+            }
+        }
+    }
+
+    async fn rbf_psbt(
+        &self,
+        txid: &Txid,
+        is_cancel: bool,
+        feerate_vb: Option<u64>,
+    ) -> Result<model::CreateSpendResult, DaemonError> {
+        match self {
+            Self::Embedded(daemon) => daemon.rbf_psbt(txid, is_cancel, feerate_vb).await,
+            Self::Lianad(daemon) => daemon.rbf_psbt(txid, is_cancel, feerate_vb).await,
+            Self::Backend(daemon) => daemon.rbf_psbt(txid, is_cancel, feerate_vb).await,
+            #[cfg(test)]
+            Self::Mock(daemon) => daemon.rbf_psbt(txid, is_cancel, feerate_vb).await,
+        }
+    }
+
+    async fn update_spend_tx(&self, psbt: &Psbt) -> Result<(), DaemonError> {
+        match self {
+            Self::Embedded(daemon) => daemon.update_spend_tx(psbt).await,
+            Self::Lianad(daemon) => daemon.update_spend_tx(psbt).await,
+            Self::Backend(daemon) => daemon.update_spend_tx(psbt).await,
+            #[cfg(test)]
+            Self::Mock(daemon) => daemon.update_spend_tx(psbt).await,
+        }
+    }
+
+    async fn delete_spend_tx(&self, txid: &Txid) -> Result<(), DaemonError> {
+        match self {
+            Self::Embedded(daemon) => daemon.delete_spend_tx(txid).await,
+            Self::Lianad(daemon) => daemon.delete_spend_tx(txid).await,
+            Self::Backend(daemon) => daemon.delete_spend_tx(txid).await,
+            #[cfg(test)]
+            Self::Mock(daemon) => daemon.delete_spend_tx(txid).await,
+        }
+    }
+
+    async fn broadcast_spend_tx(&self, txid: &Txid) -> Result<(), DaemonError> {
+        match self {
+            Self::Embedded(daemon) => daemon.broadcast_spend_tx(txid).await,
+            Self::Lianad(daemon) => daemon.broadcast_spend_tx(txid).await,
+            Self::Backend(daemon) => daemon.broadcast_spend_tx(txid).await,
+            #[cfg(test)]
+            Self::Mock(daemon) => daemon.broadcast_spend_tx(txid).await,
+        }
+    }
+
+    async fn start_rescan(&self, t: u32) -> Result<(), DaemonError> {
+        match self {
+            Self::Embedded(daemon) => daemon.start_rescan(t).await,
+            Self::Lianad(daemon) => daemon.start_rescan(t).await,
+            Self::Backend(daemon) => daemon.start_rescan(t).await,
+            #[cfg(test)]
+            Self::Mock(daemon) => daemon.start_rescan(t).await,
+        }
+    }
+
+    async fn list_confirmed_txs(
+        &self,
+        _start: u32,
+        _end: u32,
+        _limit: u64,
+    ) -> Result<model::ListTransactionsResult, DaemonError> {
+        match self {
+            Self::Embedded(daemon) => daemon.list_confirmed_txs(_start, _end, _limit).await,
+            Self::Lianad(daemon) => daemon.list_confirmed_txs(_start, _end, _limit).await,
+            Self::Backend(daemon) => daemon.list_confirmed_txs(_start, _end, _limit).await,
+            #[cfg(test)]
+            Self::Mock(daemon) => daemon.list_confirmed_txs(_start, _end, _limit).await,
+        }
+    }
+
+    async fn create_recovery(
+        &self,
+        address: Address<address::NetworkUnchecked>,
+        coins_outpoints: &[OutPoint],
+        feerate_vb: u64,
+        sequence: Option<u16>,
+    ) -> Result<Psbt, DaemonError> {
+        match self {
+            Self::Embedded(daemon) => {
+                daemon
+                    .create_recovery(address, coins_outpoints, feerate_vb, sequence)
+                    .await
+            }
+            Self::Lianad(daemon) => {
+                daemon
+                    .create_recovery(address, coins_outpoints, feerate_vb, sequence)
+                    .await
+            }
+            Self::Backend(daemon) => {
+                daemon
+                    .create_recovery(address, coins_outpoints, feerate_vb, sequence)
+                    .await
+            }
+            #[cfg(test)]
+            Self::Mock(daemon) => {
+                daemon
+                    .create_recovery(address, coins_outpoints, feerate_vb, sequence)
+                    .await
+            }
+        }
+    }
+
+    async fn list_txs(&self, txid: &[Txid]) -> Result<model::ListTransactionsResult, DaemonError> {
+        match self {
+            Self::Embedded(daemon) => daemon.list_txs(txid).await,
+            Self::Lianad(daemon) => daemon.list_txs(txid).await,
+            Self::Backend(daemon) => daemon.list_txs(txid).await,
+            #[cfg(test)]
+            Self::Mock(daemon) => daemon.list_txs(txid).await,
+        }
+    }
+
+    async fn get_labels(
+        &self,
+        labels: &HashSet<LabelItem>,
+    ) -> Result<HashMap<String, String>, DaemonError> {
+        match self {
+            Self::Embedded(daemon) => daemon.get_labels(labels).await,
+            Self::Lianad(daemon) => daemon.get_labels(labels).await,
+            Self::Backend(daemon) => daemon.get_labels(labels).await,
+            #[cfg(test)]
+            Self::Mock(daemon) => daemon.get_labels(labels).await,
+        }
+    }
+
+    async fn update_labels(
+        &self,
+        labels: &HashMap<LabelItem, Option<String>>,
+    ) -> Result<(), DaemonError> {
+        match self {
+            Self::Embedded(daemon) => daemon.update_labels(labels).await,
+            Self::Lianad(daemon) => daemon.update_labels(labels).await,
+            Self::Backend(daemon) => daemon.update_labels(labels).await,
+            #[cfg(test)]
+            Self::Mock(daemon) => daemon.update_labels(labels).await,
+        }
+    }
+
+    async fn get_labels_bip329(&self, offset: u32, limit: u32) -> Result<Labels, DaemonError> {
+        match self {
+            Self::Embedded(daemon) => daemon.get_labels_bip329(offset, limit).await,
+            Self::Lianad(daemon) => daemon.get_labels_bip329(offset, limit).await,
+            Self::Backend(daemon) => daemon.get_labels_bip329(offset, limit).await,
+            #[cfg(test)]
+            Self::Mock(daemon) => daemon.get_labels_bip329(offset, limit).await,
+        }
     }
 }

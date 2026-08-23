@@ -9,6 +9,7 @@ mod view;
 pub use context::{CompileInputs, Context, RemoteBackend};
 
 pub use descriptor::Key;
+use futures::executor::block_on;
 use iced::{clipboard, Subscription, Task};
 use liana::{
     descriptors::{LianaDescriptor, LianaPolicy},
@@ -16,9 +17,8 @@ use liana::{
 };
 use liana_ui::widget::Element;
 use lianad::config::{BitcoinBackend, BitcoindConfig, BitcoindRpcAuth, Config};
+use log::{error, info, warn};
 use std::{collections::HashMap, fmt::Debug, ops::Deref};
-use tokio::runtime::Handle;
-use tracing::{error, info, warn};
 
 use std::io::Write;
 use std::path::Path;
@@ -273,15 +273,15 @@ impl LianaInstaller {
                         Task::batch(vec![task_1, task_2])
                     }
                     Err(e) => {
-                        error!("{}", e);
+                        error!("{e}");
                         Task::none()
                     }
                 }
             }
             Message::Clipboard(s) => clipboard::write(s),
             Message::OpenUrl(url) => {
-                if let Err(e) = open::that_detached(&url) {
-                    tracing::error!("Error opening '{}': {}", url, e);
+                if let Err(e) = crate::utils::open_url(&url) {
+                    log::error!("Error opening '{url}': {e}");
                 }
                 Task::none()
             }
@@ -357,7 +357,7 @@ impl LianaInstaller {
                 // In case of failure during install, block the thread to
                 // deleted the data_dir/network directory in order to start clean again.
                 warn!("Installation failed. Cleaning up the network directory.");
-                if let Err(e) = Handle::current().block_on(delete::delete_failed_install(
+                if let Err(e) = block_on(delete::delete_failed_install(
                     &network_directory,
                     &wallet_id,
                 )) {
@@ -831,7 +831,7 @@ pub async fn create_remote_wallet(
     let backend = remote_backend.inner_client();
     if let Err(e) = update_connect_cache(
         &network_datadir,
-        backend.auth.read().await.deref(),
+        backend.auth.lock().await.deref(),
         backend.auth_client(),
         false,
         Some(remote_backend.user_id()),
@@ -840,7 +840,7 @@ pub async fn create_remote_wallet(
     {
         // this error is not critical, the liana-connect backend stored the wallet
         // and user can reauthenticate.
-        tracing::error!("Failed to update Liana-Connect cache: {}", e);
+        log::error!("Failed to update Liana-Connect cache: {e}");
     } else {
         info!("Liana-Connect cache updated");
     };
@@ -853,7 +853,7 @@ pub async fn import_remote_wallet(
     wallet_id: WalletId,
     backend: BackendWalletClient,
 ) -> Result<WalletSettings, Error> {
-    tracing::info!("Importing wallet from remote backend");
+    log::info!("Importing wallet from remote backend");
 
     if let Some(signer) = &ctx.recovered_signer {
         signer
@@ -928,7 +928,7 @@ pub async fn import_remote_wallet(
     let backend = backend.inner_client();
     if let Err(e) = update_connect_cache(
         &network_datadir,
-        backend.auth.read().await.deref(),
+        backend.auth.lock().await.deref(),
         backend.auth_client(),
         false,
         Some(backend.user_id()),
@@ -937,7 +937,7 @@ pub async fn import_remote_wallet(
     {
         // this error is not critical, the liana-connect backend stored the wallet
         // and user can reauthenticate.
-        tracing::error!("Failed to update Liana-Connect cache: {}", e);
+        log::error!("Failed to update Liana-Connect cache: {e}");
     } else {
         info!("Liana-Connect cache updated");
     };
@@ -1010,7 +1010,7 @@ pub enum Error {
     CannotWriteToFile(String),
     CannotGetAvailablePort(String),
     Unexpected(String),
-    HardwareWallet(async_hwi::Error),
+    HardwareWallet(bwk_hwi::Error),
     Backup(encrypted_backup::Error),
 }
 
@@ -1026,8 +1026,8 @@ impl From<jsonrpc::Error> for Error {
     }
 }
 
-impl From<async_hwi::Error> for Error {
-    fn from(error: async_hwi::Error) -> Self {
+impl From<bwk_hwi::Error> for Error {
+    fn from(error: bwk_hwi::Error) -> Self {
         Error::HardwareWallet(error)
     }
 }

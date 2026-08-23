@@ -7,9 +7,10 @@ use crate::{
         template_builder_view, wallet_edit::wallet_edit_route, wallet_select_view, xpub_view,
     },
 };
-use async_hwi::{bitbox::NoiseConfig, service::HwiService};
-use crossbeam::channel;
+use bwk_hwi::{bitbox::NoiseConfig, service::HwiService};
+use crossbeam_channel as channel;
 use liana_connect::ws_business::{self, KeyIdentity, Wallet};
+use liana_connect::Uuid;
 use liana_gui::{app::settings::global::PersistedBitboxNoiseConfig, dir::LianaDirectory};
 use liana_ui::widget::{modal::Modal, Element};
 pub use message::{HardwareWalletRequestId, Message, Msg};
@@ -19,7 +20,6 @@ use std::{
     sync::{Arc, Mutex},
     task::Waker,
 };
-use uuid::Uuid;
 use views::keys::SignerOption;
 
 /// Shared waker for the notification stream.
@@ -86,7 +86,7 @@ impl State {
         let bridge_notif_sender = notif_sender.clone();
         let bridge_waker = notif_waker.clone();
         let hw_bridge_handle = std::thread::spawn(move || {
-            tracing::debug!("HW bridge thread started");
+            log::debug!("HW bridge thread started");
             while let Ok(msg) = hw_receiver.recv() {
                 if bridge_notif_sender.send(msg).is_ok() {
                     if let Ok(guard) = bridge_waker.lock() {
@@ -96,17 +96,15 @@ impl State {
                     }
                 }
             }
-            tracing::debug!("HW bridge thread stopped (channel disconnected)");
+            log::debug!("HW bridge thread stopped (channel disconnected)");
         });
-
-        let rt = tokio::runtime::Handle::current().clone();
 
         // Create shared BitBox noise config for pairing persistence
         let bitbox_config: Arc<dyn NoiseConfig> =
             Arc::new(PersistedBitboxNoiseConfig::new(&datadir));
 
         // Create HwiService and set BitBox noise config for pairing persistence
-        let hw = HwiService::new(network, Some(rt));
+        let hw = HwiService::new(network);
         hw.set_bitbox_noise_config(bitbox_config.clone());
 
         Self {

@@ -1,3 +1,4 @@
+use futures::executor::block_on;
 use iced::{
     alignment::Horizontal,
     widget::{checkbox, column, row, Space},
@@ -17,7 +18,6 @@ use liana_ui::{
     widget::{modal::Modal, Column, Container, Element, SpaceExt},
 };
 use lianad::config::ConfigError;
-use tokio::runtime::Handle;
 
 use crate::{
     app::{
@@ -457,7 +457,7 @@ impl DeleteWalletModal {
             backend_type,
         };
         if let Some(auth) = &modal.wallet_settings.remote_backend_auth {
-            match Handle::current().block_on(check_membership(
+            match block_on(check_membership(
                 modal.network,
                 &modal.network_directory,
                 auth,
@@ -481,7 +481,7 @@ impl DeleteWalletModal {
                     return Task::none();
                 }
                 self.warning = None;
-                if let Err(e) = Handle::current().block_on(delete_wallet(
+                if let Err(e) = block_on(delete_wallet(
                     self.network,
                     &self.network_directory,
                     &self.wallet_settings,

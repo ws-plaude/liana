@@ -4,16 +4,15 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use chrono::{NaiveDate, Utc};
 use iced::{clipboard, Task};
-use tracing::info;
+use log::info;
 
 use liana::miniscript::bitcoin::Network;
 use lianad::config::{
     BitcoinBackend, BitcoinConfig, BitcoindConfig, BitcoindRpcAuth, Config, ElectrumConfig,
 };
 
-use liana_ui::{component::form, widget::Element};
+use liana_ui::{component::form, date::ymd_to_unix, widget::Element};
 
 use crate::{
     app::{cache::Cache, error::Error, message::Message, state::settings::State, view},
@@ -88,7 +87,7 @@ impl BitcoindSettingsState {
 impl State for BitcoindSettingsState {
     fn update(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         cache: &Cache,
         message: Message,
     ) -> Task<Message> {
@@ -309,7 +308,7 @@ impl BitcoindSettings {
 
     fn update(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         _cache: &Cache,
         message: view::SettingsEditMessage,
     ) -> Task<Message> {
@@ -449,7 +448,7 @@ impl ElectrumSettings {
 
     fn update(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         _cache: &Cache,
         message: view::SettingsEditMessage,
     ) -> Task<Message> {
@@ -552,7 +551,7 @@ impl RescanSetting {
 
     fn update(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         cache: &Cache,
         message: view::SettingsEditMessage,
     ) -> Task<Message> {
@@ -571,18 +570,15 @@ impl RescanSetting {
                 }
             }
             view::SettingsEditMessage::Confirm => {
-                let t = if let Some(date) = NaiveDate::from_ymd_opt(
+                let t = if let Some(date) = ymd_to_unix(
                     i32::from_str(&self.year.value).unwrap_or(1),
                     u32::from_str(&self.month.value).unwrap_or(1),
                     u32::from_str(&self.day.value).unwrap_or(1),
-                )
-                .and_then(|d| d.and_hms_opt(0, 0, 0))
-                .map(|d| d.and_utc().timestamp())
-                {
+                ) {
                     match cache.network {
                         Network::Bitcoin => {
                             if date < MAINNET_GENESIS_BLOCK_TIMESTAMP {
-                                info!("Date {} prior to genesis block, using genesis block timestamp {}", date, MAINNET_GENESIS_BLOCK_TIMESTAMP);
+                                info!("Date {date} prior to genesis block, using genesis block timestamp {MAINNET_GENESIS_BLOCK_TIMESTAMP}");
 
                                 MAINNET_GENESIS_BLOCK_TIMESTAMP
                             } else {
@@ -591,7 +587,7 @@ impl RescanSetting {
                         }
                         Network::Testnet => {
                             if date < TESTNET3_GENESIS_BLOCK_TIMESTAMP {
-                                info!("Date {} prior to genesis block, using genesis block timestamp {}", date, TESTNET3_GENESIS_BLOCK_TIMESTAMP);
+                                info!("Date {date} prior to genesis block, using genesis block timestamp {TESTNET3_GENESIS_BLOCK_TIMESTAMP}");
                                 TESTNET3_GENESIS_BLOCK_TIMESTAMP
                             } else {
                                 date
@@ -599,7 +595,7 @@ impl RescanSetting {
                         }
                         Network::Testnet4 => {
                             if date < TESTNET4_GENESIS_BLOCK_TIMESTAMP {
-                                info!("Date {} prior to genesis block, using genesis block timestamp {}", date, TESTNET4_GENESIS_BLOCK_TIMESTAMP);
+                                info!("Date {date} prior to genesis block, using genesis block timestamp {TESTNET4_GENESIS_BLOCK_TIMESTAMP}");
                                 TESTNET4_GENESIS_BLOCK_TIMESTAMP
                             } else {
                                 date
@@ -607,7 +603,7 @@ impl RescanSetting {
                         }
                         Network::Signet => {
                             if date < SIGNET_GENESIS_BLOCK_TIMESTAMP {
-                                info!("Date {} prior to genesis block, using genesis block timestamp {}", date, SIGNET_GENESIS_BLOCK_TIMESTAMP);
+                                info!("Date {date} prior to genesis block, using genesis block timestamp {SIGNET_GENESIS_BLOCK_TIMESTAMP}");
                                 SIGNET_GENESIS_BLOCK_TIMESTAMP
                             } else {
                                 date
@@ -618,7 +614,7 @@ impl RescanSetting {
                         // Network is a non exhaustive enum, that is why the _.
                         _ => {
                             if date < MAINNET_GENESIS_BLOCK_TIMESTAMP {
-                                info!("Date {} prior to genesis block, using genesis block timestamp {}", date, MAINNET_GENESIS_BLOCK_TIMESTAMP);
+                                info!("Date {date} prior to genesis block, using genesis block timestamp {MAINNET_GENESIS_BLOCK_TIMESTAMP}");
                                 MAINNET_GENESIS_BLOCK_TIMESTAMP
                             } else {
                                 date
@@ -629,12 +625,12 @@ impl RescanSetting {
                     self.invalid_date = true;
                     return Task::none();
                 };
-                if t > Utc::now().timestamp() {
+                if t > crate::utils::now().as_secs() as i64 {
                     self.future_date = true;
                     return Task::none();
                 }
                 self.processing = true;
-                info!("Asking daemon to rescan with timestamp: {}", t);
+                info!("Asking daemon to rescan with timestamp: {t}");
                 return Task::perform(
                     async move {
                         daemon.start_rescan(t.try_into().expect("t cannot be inferior to 0 otherwise genesis block timestamp is chosen"))

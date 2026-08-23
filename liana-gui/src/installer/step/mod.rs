@@ -19,9 +19,9 @@ pub use descriptor::{
 };
 
 pub use backend::{ChooseBackend, ImportRemoteWallet, RemoteBackendLogin};
+use log::warn;
 pub use mnemonic::{BackupMnemonic, RecoverMnemonic};
 pub use share_xpubs::ShareXpubs;
-use tracing::warn;
 pub use wallet_alias::WalletAlias;
 
 use std::collections::HashMap;

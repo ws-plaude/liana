@@ -7,13 +7,12 @@ pub use ui::SettingsUI;
 
 use std::collections::HashMap;
 
-use async_fd_lock::LockWrite;
 use liana::descriptors::LianaDescriptor;
 use serde::de::DeserializeOwned;
-use std::io::SeekFrom;
-use tokio::fs::OpenOptions;
-use tokio::io::AsyncSeekExt;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use std::{
+    fs::OpenOptions,
+    io::{Read, Seek, SeekFrom, Write},
+};
 
 use liana::miniscript::bitcoin::bip32::Fingerprint;
 use liana_ui::component::form;
@@ -185,24 +184,22 @@ where
     F: FnOnce(S) -> S,
 {
     let path = network_dir.path().join(SETTINGS_FILE_NAME);
-    let file_exists = tokio::fs::try_exists(&path).await.unwrap_or(false);
+    let file_exists = path.try_exists().unwrap_or(false);
 
-    let mut file = OpenOptions::new()
+    let file = OpenOptions::new()
         .read(true)
         .write(true)
         .create(true)
         .truncate(false)
         .open(&path)
-        .await
-        .map_err(|e| SettingsError::ReadingFile(format!("Opening file: {e}")))?
-        .lock_write()
+        .map_err(|e| SettingsError::ReadingFile(format!("Opening file: {e}")))?;
+    let mut file = crate::utils::lock_write(file)
         .await
         .map_err(|e| SettingsError::ReadingFile(format!("Locking file: {e:?}")))?;
 
     let settings: S = if file_exists {
         let mut file_content = Vec::new();
         file.read_to_end(&mut file_content)
-            .await
             .map_err(|e| SettingsError::ReadingFile(format!("Reading file content: {e}")))?;
 
         serde_json::from_slice::<S>(&file_content)
@@ -214,9 +211,7 @@ where
     let settings = updater(settings);
 
     if settings.wallets().is_empty() {
-        tokio::fs::remove_file(&path)
-            .await
-            .map_err(|e| SettingsError::ReadingFile(e.to_string()))?;
+        std::fs::remove_file(&path).map_err(|e| SettingsError::ReadingFile(e.to_string()))?;
         return Ok(());
     }
 
@@ -224,17 +219,14 @@ where
         .map_err(|e| SettingsError::WritingFile(format!("Failed to serialize settings: {e}")))?;
 
     file.seek(SeekFrom::Start(0))
-        .await
         .map_err(|e| SettingsError::WritingFile(format!("Failed to seek to start of file: {e}")))?;
 
-    file.write_all(&content).await.map_err(|e| {
-        tracing::warn!("failed to write to file: {:?}", e);
+    file.write_all(&content).map_err(|e| {
+        log::warn!("failed to write to file: {e:?}");
         SettingsError::WritingFile(e.to_string())
     })?;
 
-    file.inner_mut()
-        .set_len(content.len() as u64)
-        .await
+    file.set_len(content.len() as u64)
         .map_err(|e| SettingsError::WritingFile(format!("Failed to truncate file: {e}")))?;
 
     Ok(())
@@ -412,7 +404,7 @@ impl WalletId {
     }
     pub fn generate(descriptor: &LianaDescriptor) -> Self {
         WalletId {
-            timestamp: Some(chrono::Utc::now().timestamp()),
+            timestamp: Some(crate::utils::now().as_secs() as i64),
             descriptor_checksum: descriptor
                 .to_string()
                 .split_once('#')
@@ -569,7 +561,7 @@ impl std::fmt::Display for SettingsError {
 /// global settings.
 pub mod global {
     use crate::dir::LianaDirectory;
-    use async_hwi::bitbox::{ConfigError, NoiseConfig, NoiseConfigData};
+    use bwk_hwi::bitbox::{ConfigError, NoiseConfig, NoiseConfigData};
     use fs2::FileExt;
     use serde::{Deserialize, Serialize};
     use std::fs::OpenOptions;
@@ -598,7 +590,7 @@ pub mod global {
         pub fn load_window_config(path: &PathBuf) -> Option<WindowConfig> {
             let mut ret = None;
             if let Err(e) = Self::update(path, |s| ret = s.window_config.clone(), false) {
-                tracing::error!("Failed to load window config: {e}");
+                log::error!("Failed to load window config: {e}");
             }
             ret
         }
@@ -712,7 +704,7 @@ pub mod global {
         file_path: PathBuf,
     }
 
-    impl async_hwi::bitbox::api::Threading for PersistedBitboxNoiseConfig {}
+    impl bwk_hwi::bitbox::api::Threading for PersistedBitboxNoiseConfig {}
 
     impl PersistedBitboxNoiseConfig {
         /// Creates a new persisting noise config, which stores the pairing information in "bitbox.json"

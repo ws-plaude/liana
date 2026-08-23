@@ -110,7 +110,7 @@ impl State for CoinsPanel {
 
     fn update(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         _cache: &Cache,
         message: Message,
     ) -> Task<Message> {
@@ -155,7 +155,7 @@ impl State for CoinsPanel {
 
     fn reload(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         _wallet: Arc<Wallet>,
     ) -> Task<Message> {
         let daemon1 = daemon.clone();

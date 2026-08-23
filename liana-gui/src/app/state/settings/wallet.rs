@@ -28,7 +28,7 @@ use crate::{
     daemon::{Daemon, DaemonBackend},
     dir::LianaDirectory,
     export::{ImportExportMessage, ImportExportType},
-    hw::{HardwareWallet, HardwareWalletConfig, HardwareWallets},
+    hw::{AsyncDevice, HardwareWallet, HardwareWalletConfig, HardwareWallets},
     services::connect::client::backend::WALLET_ALIAS_MAXIMUM_LENGTH,
 };
 
@@ -148,7 +148,7 @@ impl State for WalletSettingsState {
 
     fn update(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         cache: &Cache,
         message: Message,
     ) -> Task<Message> {
@@ -277,7 +277,7 @@ impl State for WalletSettingsState {
             )) => {
                 if self.modal.is_none() {
                     let descriptor = self.wallet.main_descriptor.clone();
-                    let modal = ExportModal::new(
+                    let mut modal = ExportModal::new(
                         Some(daemon),
                         ImportExportType::ExportEncryptedDescriptor(Box::new(descriptor)),
                     );
@@ -296,7 +296,7 @@ impl State for WalletSettingsState {
 
     fn reload(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         wallet: Arc<Wallet>,
     ) -> Task<Message> {
         self.descriptor = wallet.main_descriptor.clone();
@@ -360,7 +360,7 @@ impl RegisterWalletModal {
 
     pub fn update(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         cache: &Cache,
         message: Message,
     ) -> Task<Message> {
@@ -389,7 +389,7 @@ impl RegisterWalletModal {
                         self.wallet = wallet;
                     }
                     Err(e) => {
-                        if !matches!(e, Error::HardwareWallet(async_hwi::Error::UserRefused)) {
+                        if !matches!(e, Error::HardwareWallet(bwk_hwi::Error::UserRefused)) {
                             self.warning = Some(e)
                         }
                     }
@@ -428,10 +428,10 @@ impl RegisterWalletModal {
 pub async fn register_wallet(
     data_dir: LianaDirectory,
     network: Network,
-    hw: std::sync::Arc<dyn async_hwi::HWI + Send + Sync>,
+    hw: AsyncDevice,
     fingerprint: Fingerprint,
     wallet: Arc<Wallet>,
-    daemon: Arc<dyn Daemon + Sync + Send>,
+    daemon: Arc<crate::daemon::AnyDaemon>,
 ) -> Result<Arc<Wallet>, Error> {
     let hmac = hw
         .register_wallet(&wallet.name, &wallet.main_descriptor.to_string())
@@ -496,7 +496,7 @@ pub async fn update_aliases(
     wallet: Arc<Wallet>,
     wallet_alias: Option<String>,
     keys_aliases: Vec<(Fingerprint, String)>,
-    daemon: Arc<dyn Daemon + Sync + Send>,
+    daemon: Arc<crate::daemon::AnyDaemon>,
 ) -> Result<Arc<Wallet>, Error> {
     let mut wallet = wallet.as_ref().clone();
 

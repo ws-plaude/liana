@@ -79,7 +79,7 @@ impl SettingsUI<Message> for LianaSettingsUI {
     fn new(
         data_dir: LianaDirectory,
         wallet: Arc<Wallet>,
-        _daemon: Arc<dyn Daemon + Sync + Send>,
+        _daemon: Arc<crate::daemon::AnyDaemon>,
         daemon_backend: DaemonBackend,
         internal_bitcoind: bool,
         config: Arc<Config>,
@@ -97,7 +97,7 @@ impl SettingsUI<Message> for LianaSettingsUI {
 
     fn update(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         cache: &Cache,
         message: Message,
     ) -> Task<Message> {
@@ -195,7 +195,7 @@ impl SettingsUI<Message> for LianaSettingsUI {
 
     fn reload(
         &mut self,
-        _daemon: Arc<dyn Daemon + Sync + Send>,
+        _daemon: Arc<crate::daemon::AnyDaemon>,
         wallet: Arc<Wallet>,
     ) -> Task<Message> {
         self.setting = None;
@@ -208,7 +208,7 @@ impl SettingsUI<Message> for LianaSettingsUI {
 impl State for LianaSettingsUI {
     fn update(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         cache: &Cache,
         message: Message,
     ) -> Task<Message> {
@@ -230,7 +230,7 @@ impl State for LianaSettingsUI {
 
     fn reload(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         wallet: Arc<Wallet>,
     ) -> Task<Message> {
         <Self as SettingsUI<Message>>::reload(self, daemon, wallet)
@@ -294,7 +294,7 @@ impl State for ImportExportSettingsState {
 
     fn update(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         cache: &Cache,
         message: Message,
     ) -> Task<Message> {
@@ -328,7 +328,7 @@ impl State for ImportExportSettingsState {
                 view::SettingsMessage::ExportEncryptedDescriptor,
             )) => {
                 if self.modal.is_none() {
-                    let modal = ExportModal::new(
+                    let mut modal = ExportModal::new(
                         Some(daemon),
                         ImportExportType::ExportEncryptedDescriptor(Box::new(
                             self.wallet.main_descriptor.clone(),
@@ -341,7 +341,7 @@ impl State for ImportExportSettingsState {
                 view::SettingsMessage::ExportPlaintextDescriptor,
             )) => {
                 if self.modal.is_none() {
-                    let modal = ExportModal::new(
+                    let mut modal = ExportModal::new(
                         Some(daemon),
                         ImportExportType::Descriptor(self.wallet.main_descriptor.clone()),
                     );
@@ -350,13 +350,13 @@ impl State for ImportExportSettingsState {
             }
             Message::View(view::Message::Settings(view::SettingsMessage::ExportTransactions)) => {
                 if self.modal.is_none() {
-                    let modal = ExportModal::new(Some(daemon), ImportExportType::Transactions);
+                    let mut modal = ExportModal::new(Some(daemon), ImportExportType::Transactions);
                     launch!(self, modal, true);
                 }
             }
             Message::View(view::Message::Settings(view::SettingsMessage::ExportLabels)) => {
                 if self.modal.is_none() {
-                    let modal = ExportModal::new(Some(daemon), ImportExportType::ExportLabels);
+                    let mut modal = ExportModal::new(Some(daemon), ImportExportType::ExportLabels);
                     launch!(self, modal, true);
                 }
             }
@@ -367,7 +367,7 @@ impl State for ImportExportSettingsState {
                     let config = self.config.clone();
                     let wallet = self.wallet.clone();
                     let daemon = daemon.clone();
-                    let modal = ExportModal::new(
+                    let mut modal = ExportModal::new(
                         Some(daemon),
                         ImportExportType::ExportProcessBackup(datadir, network, config, wallet),
                     );
@@ -376,7 +376,7 @@ impl State for ImportExportSettingsState {
             }
             Message::View(view::Message::Settings(view::SettingsMessage::ImportWallet)) => {
                 if self.modal.is_none() {
-                    let modal = ExportModal::new(
+                    let mut modal = ExportModal::new(
                         Some(daemon),
                         ImportExportType::ImportBackup {
                             network_dir: cache.datadir_path.network_directory(cache.network),
@@ -414,7 +414,7 @@ impl State for AboutSettingsState {
 
     fn update(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         _cache: &Cache,
         message: Message,
     ) -> Task<Message> {
@@ -436,7 +436,7 @@ impl State for AboutSettingsState {
 
     fn reload(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         _wallet: Arc<Wallet>,
     ) -> Task<Message> {
         Task::perform(
@@ -484,7 +484,7 @@ impl State for BackendSettingsState {
 
     fn update(
         &mut self,
-        daemon: Arc<dyn Daemon + Sync + Send>,
+        daemon: Arc<crate::daemon::AnyDaemon>,
         _cache: &Cache,
         message: Message,
     ) -> Task<Message> {
@@ -510,11 +510,7 @@ impl State for BackendSettingsState {
                 }
                 view::RemoteBackendSettingsMessage::EditInvitationEmail(email) => {
                     if !self.processing {
-                        self.email_form.valid = email_address::EmailAddress::parse_with_options(
-                            &email,
-                            email_address::Options::default().with_required_tld(),
-                        )
-                        .is_ok();
+                        self.email_form.valid = crate::utils::is_valid_email(&email);
                         self.email_form.value = email;
                         self.success = false;
                     }

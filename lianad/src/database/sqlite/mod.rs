@@ -817,10 +817,7 @@ impl SqliteConn {
                 // as a final check there's nothing left to update.
                 num_unconfirmed.checked_add(2).expect("must fit")
             };
-            log::debug!(
-                "Updating is_from_self in up to {} iterations..",
-                max_iterations
-            );
+            log::debug!("Updating is_from_self in up to {max_iterations} iterations..");
             let mut updated = 0;
             for i in 0..max_iterations {
                 updated = db_tx.execute(

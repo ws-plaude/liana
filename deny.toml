@@ -1,0 +1,46 @@
+# Supply chain policy, enforced by cargo-deny in CI.
+#
+# The dependency tree is split in two: the crates listed as security critical in
+# the audit (bitcoin, crypto, TLS, and anything parsing remote or on disk input)
+# are tracked upstream and updated promptly, everything else is frozen and only
+# bumped deliberately. This file enforces the parts a tool can check: no known
+# advisories, and no code from a source we did not choose.
+
+[advisories]
+yanked = "deny"
+ignore = [
+    # quick-xml is a build time dependency of wayland-scanner, which parses the
+    # protocol files shipped inside the crate, never anything from the network.
+    # winit pins the 0.37 line, so we cannot move it ourselves.
+    "RUSTSEC-2026-0194",
+    "RUSTSEC-2026-0195",
+
+    # Unmaintained, no replacement available, pulled in transitively by the text stack.
+    "RUSTSEC-2026-0192",
+]
+
+[bans]
+# The tree still carries duplicate versions we do not control, mostly from
+# pinned forks and from crates that have not moved to the 1.x http stack.
+# Warn so the count stays visible without blocking CI.
+multiple-versions = "warn"
+# The only wildcards here are between the crates of this workspace, which depend
+# on each other by path and carry no version requirement.
+wildcards = "warn"
+deny = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = [
+    "https://github.com/ws-plaude/bip329",
+    "https://github.com/ws-plaude/bwk",
+    "https://github.com/ws-plaude/iced",
+    "https://github.com/ws-plaude/winit",
+    "https://github.com/ws-plaude/softbuffer",
+    "https://github.com/ws-plaude/bitcoin-encrypted-backup",
+]
+
+# Licenses are not checked here: the workspace crates carry the repository
+# LICENCE file rather than a license field, so the check has nothing to read.
