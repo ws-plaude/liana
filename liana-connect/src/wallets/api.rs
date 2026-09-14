@@ -4,6 +4,7 @@ use std::str::FromStr;
 use liana::{
     descriptors::LianaDescriptor,
     miniscript::bitcoin::{self, bip32, consensus, hashes::hex::FromHex, Amount, OutPoint, Txid},
+    spend::SpendStatus,
 };
 use serde::{de, Deserialize, Deserializer};
 
@@ -352,6 +353,12 @@ pub struct Psbt {
     pub outputs: Vec<Output>,
     pub is_batch: bool,
     pub updated_at: i64,
+    #[serde(default)]
+    pub status: SpendStatus,
+    #[serde(default)]
+    pub block_height: Option<i32>,
+    #[serde(default)]
+    pub block_time: Option<u32>,
 }
 
 #[derive(Clone, Deserialize)]
