@@ -861,8 +861,10 @@ def test_list_spend(lianad, bitcoind):
     assert len(list_res) == 2
     first_psbt = next(entry for entry in list_res if entry["psbt"] == res["psbt"])
     assert time_before_update <= first_psbt["updated_at"] <= int(time.time())
+    assert first_psbt["status"] == "unsigned"
     second_psbt = next(entry for entry in list_res if entry["psbt"] == res_b["psbt"])
     assert time_before_update <= second_psbt["updated_at"] <= int(time.time())
+    assert second_psbt["status"] == "unsigned"
 
     # If we delete the first one, we'll get only the second one.
     first_psbt = PSBT.from_base64(res["psbt"])
@@ -876,6 +878,109 @@ def test_list_spend(lianad, bitcoind):
     lianad.rpc.delspendtx(second_psbt.tx.txid().hex())
     list_res = lianad.rpc.listspendtxs()["spend_txs"]
     assert len(list_res) == 0
+
+
+def test_list_spend_status(lianad, bitcoind):
+    def entry(txid):
+        entries = lianad.rpc.listspendtxs(txids=[txid])["spend_txs"]
+        assert len(entries) == 1
+        return entries[0]
+
+    def status(txid):
+        return entry(txid)["status"]
+
+    addr = lianad.rpc.getnewaddress()["address"]
+    txid = bitcoind.rpc.sendtoaddress(addr, 0.01)
+    bitcoind.generate_block(1, wait_for_mempool=txid)
+    wait_for(lambda: len(lianad.rpc.listcoins(["confirmed"])["coins"]) == 1)
+    outpoints = [c["outpoint"] for c in lianad.rpc.listcoins(["confirmed"])["coins"]]
+
+    first_res = lianad.rpc.createspend(
+        {bitcoind.rpc.getnewaddress(): 500_000}, outpoints, 1
+    )
+    first_psbt = PSBT.from_base64(first_res["psbt"])
+    first_txid = first_psbt.tx.txid().hex()
+    second_res = lianad.rpc.createspend(
+        {bitcoind.rpc.getnewaddress(): 400_000}, outpoints, 5
+    )
+    second_psbt = PSBT.from_base64(second_res["psbt"])
+    second_txid = second_psbt.tx.txid().hex()
+
+    lianad.rpc.updatespend(first_res["psbt"])
+    assert status(first_txid) == "unsigned"
+    lianad.rpc.updatespend(lianad.signer.sign_psbt(first_psbt).to_base64())
+    assert status(first_txid) == "broadcastable"
+    assert "block_height" not in entry(first_txid)
+    assert "block_time" not in entry(first_txid)
+
+    assert sign_and_broadcast_psbt(lianad, first_psbt) == first_txid
+    assert status(first_txid) == "broadcast"
+    assert "block_height" not in entry(first_txid)
+
+    lianad.rpc.updatespend(lianad.signer.sign_psbt(second_psbt).to_base64())
+    assert status(second_txid) == "broadcastable"
+    assert status(first_txid) == "broadcast"
+
+    assert sign_and_broadcast_psbt(lianad, second_psbt) == second_txid
+    assert status(second_txid) == "broadcast"
+    assert status(first_txid) == "deprecated"
+
+    bitcoind.generate_block(1, wait_for_mempool=second_txid)
+    wait_for(lambda: status(second_txid) == "confirmed")
+    tip = bitcoind.rpc.getblockheader(bitcoind.rpc.getbestblockhash())
+    assert entry(second_txid)["block_height"] == tip["height"]
+    assert entry(second_txid)["block_time"] == tip["time"]
+    assert status(first_txid) == "deprecated"
+    assert "block_height" not in entry(first_txid)
+    assert "block_time" not in entry(first_txid)
+
+    addr = lianad.rpc.getnewaddress()["address"]
+    txid = bitcoind.rpc.sendtoaddress(addr, 0.01)
+    bitcoind.generate_block(10, wait_for_mempool=txid)
+    wait_for(
+        lambda: lianad.rpc.getinfo()["block_height"] == bitcoind.rpc.getblockcount()
+    )
+    res = lianad.rpc.createrecovery(bitcoind.rpc.getnewaddress(), 2)
+    reco_psbt = PSBT.from_base64(res["psbt"])
+    reco_txid = reco_psbt.tx.txid().hex()
+    lianad.rpc.updatespend(reco_psbt.to_base64())
+    assert status(reco_txid) == "unsigned"
+    lianad.rpc.updatespend(
+        lianad.signer.sign_psbt(reco_psbt, recovery=True).to_base64()
+    )
+    assert status(reco_txid) == "broadcastable"
+
+    timelock = 10
+    addr = lianad.rpc.getnewaddress()["address"]
+    txid = bitcoind.rpc.sendtoaddress(addr, 0.01)
+    bitcoind.generate_block(1, wait_for_mempool=txid)
+    wait_for(
+        lambda: lianad.rpc.getinfo()["block_height"] == bitcoind.rpc.getblockcount()
+    )
+    outpoints = [
+        c["outpoint"] for c in lianad.rpc.listcoins()["coins"] if txid in c["outpoint"]
+    ]
+    res = lianad.rpc.createspend({bitcoind.rpc.getnewaddress(): 500_000}, outpoints, 1)
+    locked_psbt = PSBT.from_base64(res["psbt"])
+    for txin in locked_psbt.tx.vin:
+        txin.nSequence = timelock
+    locked_psbt.g.map[0] = locked_psbt.tx.serialize()
+    locked_psbt.tx.rehash()
+    locked_txid = locked_psbt.tx.txid().hex()
+    lianad.rpc.updatespend(locked_psbt.to_base64())
+    assert status(locked_txid) == "unsigned"
+    lianad.rpc.updatespend(
+        lianad.signer.sign_psbt(locked_psbt, recovery=True).to_base64()
+    )
+    assert status(locked_txid) == "timelocked"
+
+    bitcoind.generate_block(timelock - 2)
+    wait_for(
+        lambda: lianad.rpc.getinfo()["block_height"] == bitcoind.rpc.getblockcount()
+    )
+    assert status(locked_txid) == "timelocked"
+    bitcoind.generate_block(1)
+    wait_for(lambda: status(locked_txid) == "broadcastable")
 
 
 def test_update_spend(lianad, bitcoind):

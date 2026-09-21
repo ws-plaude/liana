@@ -29,6 +29,8 @@ pub const DEFAULT_TIMELOCK: u16 = 10_000;
 
 pub struct DummyBitcoind {
     pub txs: HashMap<Txid, (Transaction, Option<Block>)>,
+    pub mempool_entries: HashMap<Txid, MempoolEntry>,
+    pub mempool_entry_batches: sync::Arc<sync::Mutex<Vec<HashSet<Txid>>>>,
 }
 
 impl DummyBitcoind {}
@@ -37,6 +39,8 @@ impl DummyBitcoind {
     pub fn new() -> Self {
         Self {
             txs: HashMap::new(),
+            mempool_entries: HashMap::new(),
+            mempool_entry_batches: sync::Arc::new(sync::Mutex::new(Vec::new())),
         }
     }
 }
@@ -144,8 +148,27 @@ impl BitcoinInterface for DummyBitcoind {
         Vec::new()
     }
 
-    fn mempool_entry(&self, _: &bitcoin::Txid) -> Option<MempoolEntry> {
-        None
+    fn mempool_entry(&self, txid: &bitcoin::Txid) -> Option<MempoolEntry> {
+        self.mempool_entries.get(txid).cloned()
+    }
+
+    fn mempool_entries(
+        &self,
+        txids: &HashSet<bitcoin::Txid>,
+    ) -> HashMap<bitcoin::Txid, MempoolEntry> {
+        self.mempool_entry_batches
+            .lock()
+            .unwrap()
+            .push(txids.clone());
+        txids
+            .iter()
+            .filter_map(|txid| {
+                self.mempool_entries
+                    .get(txid)
+                    .cloned()
+                    .map(|entry| (*txid, entry))
+            })
+            .collect()
     }
 }
 

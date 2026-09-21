@@ -10,7 +10,10 @@ use crate::bitcoin::d::{BitcoindError, CachedTxGetter, LSBlockEntry};
 pub use d::{MempoolEntry, MempoolEntryFees, SyncProgress};
 use liana::descriptors;
 
-use std::{fmt, sync};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt, sync,
+};
 
 use miniscript::bitcoin::{self, address, bip32::ChildNumber};
 
@@ -133,6 +136,16 @@ pub trait BitcoinInterface: Send {
     ///
     /// Returns `None` if the transaction is not in the mempool.
     fn mempool_entry(&self, txid: &bitcoin::Txid) -> Option<MempoolEntry>;
+
+    fn mempool_entries(
+        &self,
+        txids: &HashSet<bitcoin::Txid>,
+    ) -> HashMap<bitcoin::Txid, MempoolEntry> {
+        txids
+            .iter()
+            .filter_map(|txid| self.mempool_entry(txid).map(|entry| (*txid, entry)))
+            .collect()
+    }
 }
 
 impl BitcoinInterface for d::BitcoinD {
@@ -693,6 +706,13 @@ impl BitcoinInterface for sync::Arc<sync::Mutex<dyn BitcoinInterface + 'static>>
 
     fn mempool_entry(&self, txid: &bitcoin::Txid) -> Option<MempoolEntry> {
         self.lock().unwrap().mempool_entry(txid)
+    }
+
+    fn mempool_entries(
+        &self,
+        txids: &HashSet<bitcoin::Txid>,
+    ) -> HashMap<bitcoin::Txid, MempoolEntry> {
+        self.lock().unwrap().mempool_entries(txids)
     }
 }
 

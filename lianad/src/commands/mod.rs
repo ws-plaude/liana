@@ -6,7 +6,7 @@
 mod utils;
 
 use crate::{
-    bitcoin::BitcoinInterface,
+    bitcoin::{BitcoinInterface, MempoolEntry},
     database::{Coin, DatabaseConnection, DatabaseInterface},
     miniscript::bitcoin::absolute::LockTime,
     poller::PollerMessage,
@@ -18,8 +18,10 @@ pub use crate::database::{CoinStatus, LabelItem};
 use liana::{
     descriptors,
     spend::{
-        self, create_spend, AddrInfo, AncestorInfo, CandidateCoin, CreateSpendRes,
-        SpendCreationError, SpendOutputAddress, SpendTxFees, TxGetter,
+        self, create_spend, psbt_spend_state, AddrInfo, AncestorInfo, CandidateCoin,
+        CreateSpendRes, ReplacementRequirements, SpendCoin, SpendCreationError, SpendOutputAddress,
+        SpendState, SpendStatus, SpendTxFees, TxGetter, BITCOIN_CORE_INCREMENTAL_RELAY_FEERATE_VB,
+        MIN_FEERATE_VB,
     },
 };
 
@@ -29,7 +31,7 @@ use utils::{
 };
 
 use std::{
-    collections::{hash_map, HashMap, HashSet},
+    collections::{hash_map, BTreeSet, HashMap, HashSet},
     convert::TryInto,
     fmt,
     sync::{self, mpsc},
@@ -856,6 +858,71 @@ impl DaemonControl {
         }
     }
 
+    fn replacement_requirements(entries: Vec<MempoolEntry>) -> Option<ReplacementRequirements> {
+        if entries.is_empty() {
+            return None;
+        }
+
+        let (min_feerate_vb, descendant_fees) = entries.into_iter().fold(
+            (MIN_FEERATE_VB, bitcoin::Amount::from_sat(0)),
+            |(min_feerate, descendant_fee), entry| {
+                let entry_feerate = entry
+                    .fees
+                    .base
+                    .checked_div(entry.vsize)
+                    .expect("Can't have a null vsize or tx would be invalid")
+                    .to_sat()
+                    .checked_add(BITCOIN_CORE_INCREMENTAL_RELAY_FEERATE_VB)
+                    .expect("Can't overflow or tx would be invalid");
+                (
+                    std::cmp::max(min_feerate, entry_feerate),
+                    descendant_fee + entry.fees.descendant,
+                )
+            },
+        );
+        Some(ReplacementRequirements {
+            min_feerate_vb,
+            descendant_fees,
+        })
+    }
+
+    fn spend_state(
+        &self,
+        psbt: &Psbt,
+        db_coins: &HashMap<bitcoin::OutPoint, Coin>,
+        tip_height: i32,
+        mempool_entries: &HashMap<bitcoin::Txid, MempoolEntry>,
+    ) -> SpendState {
+        let coins: Vec<Option<SpendCoin>> = psbt
+            .unsigned_tx
+            .input
+            .iter()
+            .map(|txin| {
+                db_coins.get(&txin.previous_output).map(|coin| SpendCoin {
+                    amount: coin.amount,
+                    block_height: coin.block_info.map(|block| block.height),
+                    spend_txid: coin.spend_txid,
+                    spend_block_height: coin.spend_block.map(|block| block.height),
+                    spend_block_time: coin.spend_block.map(|block| block.time),
+                })
+            })
+            .collect();
+        let replacement = |spenders: &BTreeSet<bitcoin::Txid>| {
+            let entries = spenders
+                .iter()
+                .filter_map(|txid| mempool_entries.get(txid).cloned())
+                .collect();
+            Self::replacement_requirements(entries)
+        };
+        psbt_spend_state(
+            psbt,
+            &self.config.main_descriptor,
+            &coins,
+            tip_height,
+            replacement,
+        )
+    }
+
     pub fn list_spend(
         &self,
         txids: Option<Vec<bitcoin::Txid>>,
@@ -867,18 +934,59 @@ impl DaemonControl {
         }
 
         let mut db_conn = self.db.connection();
-        let spend_psbts = db_conn.list_spend();
-
         let txids_set: Option<HashSet<_>> = txids.as_ref().map(|list| list.iter().collect());
-        let spend_txs = spend_psbts
+        let spend_psbts: Vec<(Psbt, Option<u32>)> = db_conn
+            .list_spend()
             .into_iter()
-            .filter_map(|(psbt, updated_at)| {
-                if let Some(set) = &txids_set {
-                    if !set.contains(&psbt.unsigned_tx.compute_txid()) {
-                        return None;
+            .filter(|(psbt, _)| {
+                txids_set
+                    .as_ref()
+                    .is_none_or(|set| set.contains(&psbt.unsigned_tx.compute_txid()))
+            })
+            .collect();
+
+        let outpoints: Vec<bitcoin::OutPoint> = spend_psbts
+            .iter()
+            .flat_map(|(psbt, _)| {
+                psbt.unsigned_tx
+                    .input
+                    .iter()
+                    .map(|txin| txin.previous_output)
+            })
+            .collect();
+        let db_coins = db_conn.coins_by_outpoints(&outpoints);
+        let tip_height = db_conn.chain_tip().map_or(0, |tip| tip.height);
+        let mut conflicting_txids = HashSet::new();
+        for (psbt, _) in &spend_psbts {
+            let psbt_txid = psbt.unsigned_tx.compute_txid();
+            for txin in &psbt.unsigned_tx.input {
+                if let Some(coin) = db_coins.get(&txin.previous_output) {
+                    if let Some(txid) = coin
+                        .spend_txid
+                        .filter(|txid| *txid != psbt_txid && coin.spend_block.is_none())
+                    {
+                        conflicting_txids.insert(txid);
                     }
                 }
-                Some(ListSpendEntry { psbt, updated_at })
+            }
+        }
+        let mempool_entries = if conflicting_txids.is_empty() {
+            HashMap::new()
+        } else {
+            self.bitcoin.mempool_entries(&conflicting_txids)
+        };
+
+        let spend_txs = spend_psbts
+            .into_iter()
+            .map(|(psbt, updated_at)| {
+                let state = self.spend_state(&psbt, &db_coins, tip_height, &mempool_entries);
+                ListSpendEntry {
+                    psbt,
+                    updated_at,
+                    status: state.status,
+                    block_height: state.block_height,
+                    block_time: state.block_time,
+                }
             })
             .collect();
         Ok(ListSpendResult { spend_txs })
@@ -997,32 +1105,14 @@ impl DaemonControl {
         }) {
             return Err(CommandError::AlreadySpent(op));
         }
-        // Compute the minimal feerate and fee the replacement transaction must have to satisfy RBF
-        // rules #3, #4 and #6 (see
-        // https://github.com/bitcoin/bitcoin/blob/master/doc/policy/mempool-replacements.md). By
-        // default (ie if the transaction we are replacing was dropped from the mempool) there is
-        // no minimum absolute fee and the minimum feerate is 1, the minimum relay feerate.
-        let (min_feerate_vb, descendant_fees) = self
-            .bitcoin
-            .mempool_spenders(&prev_outpoints)
-            .into_iter()
-            .fold(
-                (1, bitcoin::Amount::from_sat(0)),
-                |(min_feerate, descendant_fee), entry| {
-                    let entry_feerate = entry
-                        .fees
-                        .base
-                        .checked_div(entry.vsize)
-                        .expect("Can't have a null vsize or tx would be invalid")
-                        .to_sat()
-                        .checked_add(1)
-                        .expect("Can't overflow or tx would be invalid");
-                    (
-                        std::cmp::max(min_feerate, entry_feerate),
-                        descendant_fee + entry.fees.descendant,
-                    )
-                },
-            );
+        let ReplacementRequirements {
+            min_feerate_vb,
+            descendant_fees,
+        } = Self::replacement_requirements(self.bitcoin.mempool_spenders(&prev_outpoints))
+            .unwrap_or(ReplacementRequirements {
+                min_feerate_vb: MIN_FEERATE_VB,
+                descendant_fees: bitcoin::Amount::from_sat(0),
+            });
         // Check replacement transaction's target feerate, if set, is high enough,
         // and otherwise set it to the min feerate found above.
         let feerate_vb = if is_cancel {
@@ -1510,6 +1600,11 @@ pub struct ListSpendEntry {
     #[serde(serialize_with = "ser_to_string", deserialize_with = "deser_fromstr")]
     pub psbt: Psbt,
     pub updated_at: Option<u32>,
+    pub status: SpendStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub block_height: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub block_time: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2783,6 +2878,125 @@ mod tests {
         // the functional tests.
 
         ms.shutdown();
+    }
+
+    #[test]
+    fn list_spend_batches_mempool_entries_by_txid() {
+        let outpoint_a = OutPoint::new(
+            Txid::from_str("1753a1d74c0af8dd0a0f3b763c14faf3bd9ed03cbdf33337a074fb0e9f6c7810")
+                .unwrap(),
+            0,
+        );
+        let outpoint_b = OutPoint::new(
+            Txid::from_str("2753a1d74c0af8dd0a0f3b763c14faf3bd9ed03cbdf33337a074fb0e9f6c7810")
+                .unwrap(),
+            0,
+        );
+        let spender_a =
+            Txid::from_str("3753a1d74c0af8dd0a0f3b763c14faf3bd9ed03cbdf33337a074fb0e9f6c7810")
+                .unwrap();
+        let spender_b =
+            Txid::from_str("4753a1d74c0af8dd0a0f3b763c14faf3bd9ed03cbdf33337a074fb0e9f6c7810")
+                .unwrap();
+        let psbt = |outpoint| {
+            Psbt::from_unsigned_tx(Transaction {
+                version: TxVersion::TWO,
+                lock_time: absolute::LockTime::ZERO,
+                input: vec![TxIn {
+                    previous_output: outpoint,
+                    sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
+                    ..TxIn::default()
+                }],
+                output: vec![TxOut {
+                    value: Amount::from_sat(50_000),
+                    script_pubkey: ScriptBuf::new(),
+                }],
+            })
+            .unwrap()
+        };
+        let psbt_a = psbt(outpoint_a);
+        let psbt_b = psbt(outpoint_b);
+        let mut database = DummyDatabase::new(dummy_descriptor(DEFAULT_TIMELOCK));
+        database.insert_coins(vec![
+            Coin {
+                outpoint: outpoint_a,
+                is_immature: false,
+                block_info: Some(BlockInfo { height: 1, time: 1 }),
+                amount: Amount::from_sat(100_000),
+                derivation_index: ChildNumber::from(0),
+                is_change: false,
+                spend_txid: Some(spender_a),
+                spend_block: None,
+                is_from_self: false,
+            },
+            Coin {
+                outpoint: outpoint_b,
+                is_immature: false,
+                block_info: Some(BlockInfo { height: 1, time: 1 }),
+                amount: Amount::from_sat(100_000),
+                derivation_index: ChildNumber::from(1),
+                is_change: false,
+                spend_txid: Some(spender_b),
+                spend_block: None,
+                is_from_self: false,
+            },
+        ]);
+        database.store_spend(&psbt_a);
+        database.store_spend(&psbt_b);
+
+        let mut bitcoin = DummyBitcoind::new();
+        bitcoin.mempool_entries.insert(
+            spender_a,
+            MempoolEntry {
+                vsize: 100,
+                fees: crate::bitcoin::MempoolEntryFees {
+                    base: Amount::from_sat(100),
+                    ancestor: Amount::from_sat(100),
+                    descendant: Amount::from_sat(100),
+                },
+                ancestor_vsize: 100,
+            },
+        );
+        bitcoin.mempool_entries.insert(
+            spender_b,
+            MempoolEntry {
+                vsize: 100,
+                fees: crate::bitcoin::MempoolEntryFees {
+                    base: Amount::from_sat(100),
+                    ancestor: Amount::from_sat(100),
+                    descendant: Amount::from_sat(90_000),
+                },
+                ancestor_vsize: 100,
+            },
+        );
+        let batches = bitcoin.mempool_entry_batches.clone();
+        let daemon = DummyLiana::new(bitcoin, database, false);
+        let result = daemon
+            .control()
+            .list_spend(Some(vec![
+                psbt_a.unsigned_tx.compute_txid(),
+                psbt_b.unsigned_tx.compute_txid(),
+            ]))
+            .unwrap();
+        let statuses: HashMap<_, _> = result
+            .spend_txs
+            .into_iter()
+            .map(|entry| (entry.psbt.unsigned_tx.compute_txid(), entry.status))
+            .collect();
+
+        assert_eq!(
+            *batches.lock().unwrap(),
+            vec![HashSet::from([spender_a, spender_b])]
+        );
+        assert_eq!(
+            statuses[&psbt_a.unsigned_tx.compute_txid()],
+            SpendStatus::Unsigned
+        );
+        assert_eq!(
+            statuses[&psbt_b.unsigned_tx.compute_txid()],
+            SpendStatus::Deprecated
+        );
+        daemon.shutdown();
     }
 
     #[test]
