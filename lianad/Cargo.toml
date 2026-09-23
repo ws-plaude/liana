@@ -17,7 +17,13 @@ path = "src/bin/daemon.rs"
 name = "liana-cli"
 path = "src/bin/cli.rs"
 
+[[example]]
+name = "listspendtxs_electrum"
+path = "examples/listspendtxs_electrum.rs"
+required-features = ["electrum-mempool-measurement"]
+
 [features]
+electrum-mempool-measurement = []
 nonblocking_shutdown = []
 
 [dependencies]

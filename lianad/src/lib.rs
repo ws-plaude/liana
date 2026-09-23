@@ -17,6 +17,8 @@ pub use crate::bitcoin::{
     d::{BitcoinD, BitcoindError, WalletError},
     electrum::{Electrum, ElectrumError},
 };
+#[cfg(feature = "electrum-mempool-measurement")]
+pub use crate::bitcoin::{electrum::client::Client as ElectrumClient, MempoolEntry};
 
 use crate::jsonrpc::server;
 use crate::{

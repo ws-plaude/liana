@@ -394,6 +394,14 @@ impl Client {
         self.mempool_entries_at_tip(txids, None)
     }
 
+    #[cfg(feature = "electrum-mempool-measurement")]
+    pub fn measure_mempool_entries(
+        &self,
+        txids: HashSet<bitcoin::Txid>,
+    ) -> Result<HashMap<bitcoin::Txid, MempoolEntry>, Error> {
+        self.mempool_entries(txids)
+    }
+
     /// Get mempool entry for a single `txid`.
     pub fn mempool_entry(&self, txid: &bitcoin::Txid) -> Result<Option<MempoolEntry>, Error> {
         self.mempool_entries(HashSet::from([*txid]))
