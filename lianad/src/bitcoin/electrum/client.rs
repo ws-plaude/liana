@@ -1,4 +1,7 @@
-use std::{collections::HashSet, convert::TryInto};
+use std::{
+    collections::{HashMap, HashSet},
+    convert::TryInto,
+};
 
 use bdk_electrum::{
     bdk_chain::{
@@ -167,11 +170,11 @@ impl Client {
     /// If `expected_tip` is specified, the function will return `Error::TipChanged` if the chain tip
     /// changes while the entries are being found. Otherwise, the function will restart in case the
     /// chain tip changes before completion.
-    fn mempool_entries(
+    fn mempool_entries_at_tip(
         &self,
         txids: HashSet<bitcoin::Txid>,
         expected_tip: Option<CheckPoint>,
-    ) -> Result<Vec<MempoolEntry>, Error> {
+    ) -> Result<HashMap<bitcoin::Txid, MempoolEntry>, Error> {
         log::debug!("Getting mempool entries for txids '{:?}'.", txids);
         let mut graph = TxGraph::default();
         let mut local_chain = LocalChain::from_genesis_hash(self.genesis_block()?.hash).0;
@@ -212,7 +215,7 @@ impl Client {
                     .get_tx(*txid)
                     .expect("we must have tx in graph after sync");
                 desc_ops.extend(outpoints_from_tx(&tx));
-                txs.push(tx);
+                txs.push((*txid, tx));
             }
         }
         let _ = graph.apply_update(sync_result.graph_update);
@@ -237,7 +240,7 @@ impl Client {
             }
             if local_chain.tip() != local_tip {
                 log::debug!("Chain tip changed while getting mempool entry. Restarting.");
-                return self.mempool_entries(txids, expected_tip.clone());
+                return self.mempool_entries_at_tip(txids, expected_tip.clone());
             }
             let _ = graph.apply_update(sync_result.graph_update);
             // Get any txids spending the outpoints we've just synced against.
@@ -265,7 +268,7 @@ impl Client {
         // Confirmed transactions will be filtered out from `anc_txids` later on.
         let mut anc_txids: HashSet<_> = txs
             .iter()
-            .flat_map(|tx| tx.input.iter().map(|txin| txin.previous_output.txid))
+            .flat_map(|(_, tx)| tx.input.iter().map(|txin| txin.previous_output.txid))
             .collect();
         while !anc_txids.is_empty() {
             log::debug!("Syncing ancestor txids: {:?}", anc_txids);
@@ -287,7 +290,7 @@ impl Client {
             }
             if local_chain.tip() != local_tip {
                 log::debug!("Chain tip changed while getting mempool entry. Restarting.");
-                return self.mempool_entries(txids, expected_tip);
+                return self.mempool_entries_at_tip(txids, expected_tip);
             }
             let _ = graph.apply_update(sync_result.graph_update);
 
@@ -316,8 +319,8 @@ impl Client {
                 .flatten()
                 .collect();
         }
-        let mut entries = Vec::new();
-        for tx in txs {
+        let mut entries = HashMap::new();
+        for (txid, tx) in txs {
             // Now iterate over ancestors and descendants in the graph.
             let base_fee = graph
                 .calculate_fee(&tx)
@@ -373,7 +376,7 @@ impl Client {
                 fees,
                 ancestor_vsize: anc_size.try_into().expect("tx size must fit into u64"),
             };
-            entries.push(entry)
+            entries.insert(txid, entry);
         }
 
         // It's possible that the chain tip has now changed, but it hadn't done as of the last sync,
@@ -381,15 +384,20 @@ impl Client {
         Ok(entries)
     }
 
+    pub(crate) fn mempool_entries(
+        &self,
+        txids: HashSet<bitcoin::Txid>,
+    ) -> Result<HashMap<bitcoin::Txid, MempoolEntry>, Error> {
+        if txids.is_empty() {
+            return Ok(HashMap::new());
+        }
+        self.mempool_entries_at_tip(txids, None)
+    }
+
     /// Get mempool entry for a single `txid`.
-    ///
-    /// Convenience method to call `mempool_entries` for a single `txid`,
-    /// returning `Option` instead of `Vec`.
     pub fn mempool_entry(&self, txid: &bitcoin::Txid) -> Result<Option<MempoolEntry>, Error> {
-        // We just require the chain tip to stay the same while running `mempool_entries` so
-        // don't need to pass in an expected tip.
-        self.mempool_entries(HashSet::from([*txid]), None)
-            .map(|entries| entries.first().cloned())
+        self.mempool_entries(HashSet::from([*txid]))
+            .map(|mut entries| entries.remove(txid))
     }
 
     /// Get mempool spenders of the given outpoints.
@@ -420,7 +428,7 @@ impl Client {
             .flat_map(|op| graph.outspends(*op))
             .copied()
             .collect();
-        let entries = match self.mempool_entries(txids, Some(local_tip)) {
+        let entries = match self.mempool_entries_at_tip(txids, Some(local_tip)) {
             Ok(entries) => entries,
             Err(Error::TipChanged(expected, actual)) => {
                 log::debug!(
@@ -435,6 +443,6 @@ impl Client {
                 return Err(e);
             }
         };
-        Ok(entries)
+        Ok(entries.into_values().collect())
     }
 }

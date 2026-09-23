@@ -567,6 +567,15 @@ impl BitcoinInterface for electrum::Electrum {
         self.client().mempool_entry(txid).ok()?
     }
 
+    fn mempool_entries(
+        &self,
+        txids: &HashSet<bitcoin::Txid>,
+    ) -> HashMap<bitcoin::Txid, MempoolEntry> {
+        self.client()
+            .mempool_entries(txids.clone())
+            .unwrap_or_default()
+    }
+
     fn mempool_spenders(&self, outpoints: &[bitcoin::OutPoint]) -> Vec<MempoolEntry> {
         self.client()
             .mempool_spenders(outpoints)
