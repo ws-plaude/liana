@@ -7,6 +7,8 @@ mod node;
 mod share_xpubs;
 mod wallet_alias;
 
+#[cfg(feature = "managed-bitcoind-updates")]
+pub(crate) use node::bitcoind::install_bitcoind;
 pub use node::{
     bitcoind::{DownloadState, InstallState, InternalBitcoindStep, SelectBitcoindTypeStep},
     DefineNode,

@@ -3307,6 +3307,7 @@ dependencies = [
  "reqwest",
  "rfd",
  "rust-ini",
+ "rustc_version",
  "serde",
  "serde_json",
  "tar",
@@ -3314,6 +3315,7 @@ dependencies = [
  "toml 0.5.11",
  "tracing",
  "tracing-subscriber",
+ "windows-sys 0.59.0",
  "winresource",
  "zip",
 ]

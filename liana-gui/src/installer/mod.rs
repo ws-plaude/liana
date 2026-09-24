@@ -2,8 +2,11 @@ mod context;
 mod decrypt;
 mod descriptor;
 mod message;
-mod step;
+pub(crate) mod step;
 mod view;
+
+#[cfg(feature = "managed-bitcoind-updates")]
+pub(crate) use view::bitcoind_download_status;
 
 pub use context::{CompileInputs, Context, RemoteBackend};
 

@@ -38,6 +38,7 @@ tokio = { workspace = true, features = ["signal"] }
 async-fd-lock = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
+rustc_version = { workspace = true }
 
 # Used to ping bitcoind node
 jsonrpc = { workspace = true, features = ["simple_http"], default-features = false }
@@ -68,6 +69,7 @@ encrypted_backup = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 zip = { workspace = true, default-features = false, features = ["bzip2", "deflate"] }
+windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_System_Threading"] }
 
 [target.'cfg(unix)'.dependencies]
 tar = { workspace = true, default-features = false }
@@ -77,6 +79,7 @@ flate2 = { workspace = true, default-features = false }
 default = ["debugger"]
 debugger = []
 skip-windows-icon = []
+managed-bitcoind-updates = []
 
 [build-dependencies]
 winresource = { workspace = true }

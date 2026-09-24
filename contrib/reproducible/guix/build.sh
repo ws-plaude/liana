@@ -44,7 +44,8 @@ for package_name in "lianad" "liana-gui" "liana-business"; do
     # `debugger` feature (default-on for development) is not compiled into
     # release artifacts.
     case "$package_name" in
-        liana-gui|liana-business) extra_args="--no-default-features" ;;
+        liana-gui) extra_args="--no-default-features --features managed-bitcoind-updates" ;;
+        liana-business) extra_args="--no-default-features" ;;
         *) extra_args="" ;;
     esac
     RUSTC_BOOTSTRAP=1 cargo zigbuild -vvv \

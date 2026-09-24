@@ -588,6 +588,16 @@ pub mod global {
     pub struct GlobalSettings {
         pub bitbox: Option<BitboxSettings>,
         pub window_config: Option<WindowConfig>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub bitcoind_upgrade: Option<BitcoindUpgradeSettings>,
+    }
+
+    #[derive(Debug, Default, Clone, Deserialize, Serialize)]
+    pub struct BitcoindUpgradeSettings {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub highest_liana_version: Option<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        pub skipped_bitcoind_versions: Vec<String>,
     }
 
     impl GlobalSettings {
@@ -627,17 +637,17 @@ pub mod global {
             Self::update(path, |s| s.bitbox = Some(bitbox.clone()), true)
         }
 
-        pub fn update<F>(path: &PathBuf, mut update: F, mut write: bool) -> Result<(), String>
+        pub fn update<F>(path: &PathBuf, mut update: F, write: bool) -> Result<(), String>
         where
             F: FnMut(&mut GlobalSettings),
         {
             let exists = path.is_file();
 
-            let (mut global_settings, file) = if exists {
+            let (mut global_settings, file) = if exists || write {
                 let mut file = OpenOptions::new()
                     .read(true)
                     .write(true)
-                    .create(true)
+                    .create(write)
                     .truncate(false)
                     .open(path)
                     .map_err(|e| format!("Opening file: {e}"))?;
@@ -653,39 +663,20 @@ pub mod global {
                     fs2::FileExt::unlock(&file).map_err(|e| format!("Unlocking file: {e}"))?;
                 }
 
-                (
-                    serde_json::from_str::<GlobalSettings>(&content).map_err(|e| e.to_string())?,
-                    Some(file),
-                )
+                let settings = if !exists && content.is_empty() {
+                    GlobalSettings::default()
+                } else {
+                    serde_json::from_str(&content).map_err(|e| e.to_string())?
+                };
+                (settings, Some(file))
             } else {
                 (GlobalSettings::default(), None)
             };
 
             update(&mut global_settings);
 
-            if !exists
-                && global_settings.bitbox.is_none()
-                && global_settings.window_config.is_none()
-            {
-                write = false;
-            }
-
             if write {
-                let mut file = if let Some(file) = file {
-                    file
-                } else {
-                    let file = OpenOptions::new()
-                        .read(true)
-                        .write(true)
-                        .create(true)
-                        .truncate(false)
-                        .open(path)
-                        .map_err(|e| format!("Opening file: {e}"))?;
-
-                    file.lock_exclusive()
-                        .map_err(|e| format!("Locking file: {e}"))?;
-                    file
-                };
+                let mut file = file.expect("Write access opens the global settings file");
                 let content = serde_json::to_vec_pretty(&global_settings)
                     .map_err(|e| format!("Failed to serialize GlobalSettings: {e}"))?;
 
@@ -754,8 +745,13 @@ pub mod global {
 
 #[cfg(test)]
 mod test {
-    use super::global::{GlobalSettings, WindowConfig};
-    use std::env;
+    use crate::app::settings::global::{BitcoindUpgradeSettings, GlobalSettings, WindowConfig};
+    use std::{
+        env, fs,
+        sync::{Arc, Barrier},
+        thread,
+        time::{SystemTime, UNIX_EPOCH},
+    };
 
     const RAW_GLOBAL_SETTINGS: &str = r#"{
           "bitbox": {
@@ -840,7 +836,74 @@ mod test {
 
     #[test]
     fn test_parse_global_config() {
-        let _ = serde_json::from_str::<GlobalSettings>(RAW_GLOBAL_SETTINGS).unwrap();
+        let settings = serde_json::from_str::<GlobalSettings>(RAW_GLOBAL_SETTINGS).unwrap();
+        assert!(settings.bitcoind_upgrade.is_none());
+        assert!(serde_json::to_value(&settings)
+            .unwrap()
+            .get("bitcoind_upgrade")
+            .is_none());
+    }
+
+    #[test]
+    fn test_bitcoind_upgrade_json() {
+        let empty_global = serde_json::from_str::<GlobalSettings>("{}").unwrap();
+        assert!(empty_global.bitcoind_upgrade.is_none());
+        assert_eq!(
+            serde_json::to_value(&empty_global).unwrap(),
+            serde_json::json!({"bitbox": null, "window_config": null})
+        );
+
+        let empty_upgrade = serde_json::from_str::<BitcoindUpgradeSettings>("{}").unwrap();
+        assert!(empty_upgrade.highest_liana_version.is_none());
+        assert!(empty_upgrade.skipped_bitcoind_versions.is_empty());
+        assert_eq!(
+            serde_json::to_value(&empty_upgrade).unwrap(),
+            serde_json::json!({})
+        );
+
+        let version_only = serde_json::from_str::<BitcoindUpgradeSettings>(
+            r#"{"highest_liana_version":"15.0.0"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            version_only.highest_liana_version.as_deref(),
+            Some("15.0.0")
+        );
+        assert!(version_only.skipped_bitcoind_versions.is_empty());
+        assert_eq!(
+            serde_json::to_value(&version_only).unwrap(),
+            serde_json::json!({"highest_liana_version": "15.0.0"})
+        );
+
+        let skipped_only = serde_json::from_str::<BitcoindUpgradeSettings>(
+            r#"{"skipped_bitcoind_versions":["31.1"]}"#,
+        )
+        .unwrap();
+        assert!(skipped_only.highest_liana_version.is_none());
+        assert_eq!(skipped_only.skipped_bitcoind_versions, ["31.1"]);
+        assert_eq!(
+            serde_json::to_value(&skipped_only).unwrap(),
+            serde_json::json!({"skipped_bitcoind_versions": ["31.1"]})
+        );
+
+        let populated = serde_json::from_str::<GlobalSettings>(
+            r#"{"bitcoind_upgrade":{"highest_liana_version":"15.0.0","skipped_bitcoind_versions":["31.1"]}}"#,
+        )
+        .unwrap();
+        let upgrade = populated.bitcoind_upgrade.as_ref().unwrap();
+        assert_eq!(upgrade.highest_liana_version.as_deref(), Some("15.0.0"));
+        assert_eq!(upgrade.skipped_bitcoind_versions, ["31.1"]);
+        assert_eq!(
+            serde_json::to_value(&populated).unwrap(),
+            serde_json::json!({
+                "bitbox": null,
+                "window_config": null,
+                "bitcoind_upgrade": {
+                    "highest_liana_version": "15.0.0",
+                    "skipped_bitcoind_versions": ["31.1"]
+                }
+            })
+        );
     }
 
     #[test]
@@ -923,5 +986,74 @@ mod test {
             true,
         )
         .unwrap()
+    }
+
+    #[test]
+    fn concurrent_initial_updates_preserve_both_settings() {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("current time")
+            .as_nanos();
+        let path = env::temp_dir().join(format!(
+            "liana-global-settings-{}-{timestamp}.json",
+            std::process::id()
+        ));
+        let barrier = Arc::new(Barrier::new(2));
+
+        let window_path = path.clone();
+        let window_barrier = barrier.clone();
+        let window_writer = thread::spawn(move || {
+            window_barrier.wait();
+            GlobalSettings::update_window_config(
+                &window_path,
+                &WindowConfig {
+                    width: 1200.0,
+                    height: 700.0,
+                },
+            )
+        });
+
+        let upgrade_path = path.clone();
+        let upgrade_writer = thread::spawn(move || {
+            barrier.wait();
+            GlobalSettings::update(
+                &upgrade_path,
+                |settings| {
+                    settings.bitcoind_upgrade = Some(BitcoindUpgradeSettings {
+                        highest_liana_version: Some("16.0.0".to_string()),
+                        skipped_bitcoind_versions: vec!["31.1".to_string()],
+                    });
+                },
+                true,
+            )
+        });
+
+        window_writer
+            .join()
+            .expect("window writer")
+            .expect("save window config");
+        upgrade_writer
+            .join()
+            .expect("upgrade writer")
+            .expect("save upgrade config");
+
+        GlobalSettings::update(
+            &path,
+            |settings| {
+                assert_eq!(
+                    settings.window_config.as_ref().map(|window| window.width),
+                    Some(1200.0)
+                );
+                let upgrade = settings
+                    .bitcoind_upgrade
+                    .as_ref()
+                    .expect("upgrade settings");
+                assert_eq!(upgrade.highest_liana_version.as_deref(), Some("16.0.0"));
+                assert_eq!(upgrade.skipped_bitcoind_versions, ["31.1"]);
+            },
+            false,
+        )
+        .expect("read global settings");
+        fs::remove_file(path).expect("remove test settings");
     }
 }

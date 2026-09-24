@@ -982,6 +982,10 @@ installer-distinct-ports-unavailable
 
 installer-download-complete => "Download complete"
 
+bitcoind-upgrade-title => "Upgrading Bitcoin Core to {$version}"
+
+bitcoind-upgrade-waiting => "Waiting for another wallet to finish the Bitcoin Core upgrade"
+
 installer-download-failed => "Download failed: '{$error}'."
 
 installer-downloading-bitcoin-core-progress

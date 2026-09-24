@@ -9,6 +9,8 @@ use liana::miniscript::bitcoin;
 use liana_ui::{component::panels::home::WalletOrigin, widget::Element};
 use lianad::commands::ListCoinsResult;
 
+#[cfg(feature = "managed-bitcoind-updates")]
+use crate::gui::bitcoind_upgrade::{self, Upgrade};
 use crate::{
     app::{
         self,
@@ -44,6 +46,8 @@ where
     S: SettingsTrait,
 {
     Launcher(Box<Launcher>),
+    #[cfg(feature = "managed-bitcoind-updates")]
+    Upgrade(Box<Upgrade>),
     Installer(I),
     Loader(Box<Loader>),
     Login(Box<login::LianaLiteLogin>),
@@ -89,6 +93,8 @@ where
     M: Clone + Send + 'static,
 {
     Launch(Box<launcher::Message>),
+    #[cfg(feature = "managed-bitcoind-updates")]
+    Upgrade(bitcoind_upgrade::Message),
     Install(Box<M>),
     Load(Box<loader::Message>),
     Run(Box<app::Message>),
@@ -123,6 +129,8 @@ where
 {
     pub id: usize,
     pub state: State<I, S, M>,
+    #[cfg(feature = "managed-bitcoind-updates")]
+    upgrade_lock: Option<std::fs::File>,
     _phantom: PhantomData<M>,
 }
 
@@ -136,6 +144,8 @@ where
         Tab {
             id,
             state,
+            #[cfg(feature = "managed-bitcoind-updates")]
+            upgrade_lock: None,
             _phantom: PhantomData,
         }
     }
@@ -161,6 +171,11 @@ where
             State::Installer(_) => t!("tab-installer"),
             State::Loader(_) => t!("common-loading"),
             State::Launcher(_) => t!("tab-launcher"),
+            #[cfg(feature = "managed-bitcoind-updates")]
+            State::Upgrade(_) => t!(
+                "bitcoind-upgrade-title",
+                version = crate::node::bitcoind::VERSION
+            ),
             State::Login(_) => t!("common-login"),
             State::App(a) => a.title().to_string(),
             State::_Phantom(_) => unreachable!(),
@@ -197,10 +212,53 @@ where
                     command.map(|msg| Message::Install(Box::new(msg)))
                 }
                 launcher::Message::Run(datadir_path, cfg, network, settings) => {
+                    #[cfg(feature = "managed-bitcoind-updates")]
+                    {
+                        let (upgrade, command) = Upgrade::new(datadir_path, cfg, network, settings);
+                        self.state = State::Upgrade(Box::new(upgrade));
+                        command.map(Message::Upgrade)
+                    }
+                    #[cfg(not(feature = "managed-bitcoind-updates"))]
+                    {
+                        let wallet_id = settings.wallet_id();
+                        if let Some(auth_cfg) = settings.remote_backend_auth {
+                            let (login, command) = login::LianaLiteLogin::new(
+                                datadir_path,
+                                network,
+                                wallet_id,
+                                auth_cfg,
+                                I::backend_type(),
+                            );
+                            self.state = State::Login(Box::new(login));
+                            command.map(|msg| Message::Login(Box::new(msg)))
+                        } else {
+                            let (loader, command) =
+                                Loader::new(datadir_path, cfg, network, None, None, settings);
+                            self.state = State::Loader(Box::new(loader));
+                            command.map(|msg| Message::Load(Box::new(msg)))
+                        }
+                    }
+                }
+                _ => l.update(*msg).map(|msg| Message::Launch(Box::new(msg))),
+            },
+            #[cfg(feature = "managed-bitcoind-updates")]
+            (State::Upgrade(upgrade), Message::Upgrade(message)) => match message {
+                bitcoind_upgrade::Message::Continue | bitcoind_upgrade::Message::Skip => {
+                    let skipped = matches!(message, bitcoind_upgrade::Message::Skip);
+                    if let Err(e) = upgrade.finish(skipped) {
+                        upgrade.set_save_error(e);
+                        return Task::none();
+                    }
+                    let datadir = upgrade.datadir.clone();
+                    let config = upgrade.config.clone();
+                    let network = upgrade.network;
+                    let settings = upgrade.wallet.clone();
                     let wallet_id = settings.wallet_id();
+                    self.upgrade_lock = upgrade.take_lock();
                     if let Some(auth_cfg) = settings.remote_backend_auth {
+                        self.upgrade_lock = None;
                         let (login, command) = login::LianaLiteLogin::new(
-                            datadir_path,
+                            datadir,
                             network,
                             wallet_id,
                             auth_cfg,
@@ -210,12 +268,12 @@ where
                         command.map(|msg| Message::Login(Box::new(msg)))
                     } else {
                         let (loader, command) =
-                            Loader::new(datadir_path, cfg, network, None, None, settings);
+                            Loader::new(datadir, config, network, None, None, settings);
                         self.state = State::Loader(Box::new(loader));
                         command.map(|msg| Message::Load(Box::new(msg)))
                     }
                 }
-                _ => l.update(*msg).map(|msg| Message::Launch(Box::new(msg))),
+                other => upgrade.update(other).map(Message::Upgrade),
             },
             (State::Login(l), Message::Login(msg)) => match *msg {
                 login::Message::View(login::ViewMessage::BackToLauncher(network)) => {
@@ -365,7 +423,23 @@ where
                 }
             }
             (State::Loader(loader), Message::Load(msg)) => match *msg {
+                #[cfg(feature = "managed-bitcoind-updates")]
+                loader::Message::Started(result) => {
+                    let task = loader.update(loader::Message::Started(result));
+                    self.upgrade_lock = None;
+                    task.map(|msg| Message::Load(Box::new(msg)))
+                }
+                #[cfg(feature = "managed-bitcoind-updates")]
+                loader::Message::Loaded(Ok(result)) => {
+                    let task = loader.update(loader::Message::Loaded(Ok(result)));
+                    self.upgrade_lock = None;
+                    task.map(|msg| Message::Load(Box::new(msg)))
+                }
                 loader::Message::View(loader::ViewMessage::SwitchNetwork) => {
+                    #[cfg(feature = "managed-bitcoind-updates")]
+                    {
+                        self.upgrade_lock = None;
+                    }
                     let (launcher, command) = Launcher::new(
                         loader.datadir_path.clone(),
                         Some(loader.network),
@@ -550,6 +624,8 @@ where
     pub fn subscription(&self) -> Subscription<Message<M>> {
         Subscription::batch(vec![match &self.state {
             State::Installer(v) => v.subscription().map(|msg| Message::Install(Box::new(msg))),
+            #[cfg(feature = "managed-bitcoind-updates")]
+            State::Upgrade(v) => v.subscription().map(Message::Upgrade),
             State::Loader(v) => v.subscription().map(|msg| Message::Load(Box::new(msg))),
             State::App(v) => v.subscription().map(|msg| Message::Run(Box::new(msg))),
             State::Launcher(v) => v.subscription().map(|msg| Message::Launch(Box::new(msg))),
@@ -561,6 +637,8 @@ where
     pub fn view(&self) -> Element<'_, Message<M>> {
         match &self.state {
             State::Installer(v) => v.view().map(|msg| Message::Install(Box::new(msg))),
+            #[cfg(feature = "managed-bitcoind-updates")]
+            State::Upgrade(v) => v.view().map(Message::Upgrade),
             State::App(v) => v.view().map(|msg| Message::Run(Box::new(msg))),
             State::Launcher(v) => v.view().map(|msg| Message::Launch(Box::new(msg))),
             State::Loader(v) => v.view().map(|msg| Message::Load(Box::new(msg))),
@@ -570,7 +648,13 @@ where
     }
 
     pub fn stop(&mut self) {
+        #[cfg(feature = "managed-bitcoind-updates")]
+        {
+            self.upgrade_lock = None;
+        }
         match &mut self.state {
+            #[cfg(feature = "managed-bitcoind-updates")]
+            State::Upgrade(_) => {}
             State::Loader(s) => s.stop(),
             State::Launcher(s) => s.stop(),
             State::Installer(s) => s.stop(),

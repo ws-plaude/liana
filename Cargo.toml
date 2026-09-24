@@ -90,6 +90,7 @@ base64 = "0.21"
 bitcoin_hashes = "0.12"
 reqwest = { version = "0.11", default-features = false }
 rust-ini = "0.19.0"
+rustc_version = "0.4"
 rfd = "0.15.1"
 fs2 = "0.4.3"
 open = "5.3"
@@ -98,6 +99,7 @@ zip = { version = "0.6", default-features = false }
 tar = { version = "0.4", default-features = false }
 flate2 = { version = "1.0", default-features = false }
 winresource = "0.1.24"
+windows-sys = "0.59"
 unicode-segmentation = "1.0"
 bitcoin = "0.32"
 
