@@ -67,6 +67,8 @@ pub enum Message {
     Payment(Result<(HistoryTransaction, usize), Error>),
     LabelsUpdated(Result<HashMap<String, Option<String>>, Error>),
     BroadcastModal(Result<HashSet<Txid>, Error>),
+    /// Whether the saved PSBT pays for unconfirmed parents.
+    CpfpChecked(Txid, bool),
     RbfModal(Box<HistoryTransaction>, bool, Result<HashSet<Txid>, Error>),
     Export(ImportExportMessage),
 }

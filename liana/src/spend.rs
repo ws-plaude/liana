@@ -613,10 +613,20 @@ pub enum SpendTxFees {
     Rbf(u64, u64),
 }
 
+/// Start of the `AdditionalFeeForAncestors` warning text.
+pub const CPFP_WARNING_PREFIX: &str = "CPFP:";
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum CreateSpendWarning {
     ChangeAddedToFee(u64),
     AdditionalFeeForAncestors(u64),
+}
+
+impl CreateSpendWarning {
+    /// Whether a warning, received as text, is an `AdditionalFeeForAncestors` one.
+    pub fn is_additional_fee_for_ancestors(warning: &str) -> bool {
+        warning.starts_with(CPFP_WARNING_PREFIX)
+    }
 }
 
 impl fmt::Display for CreateSpendWarning {
@@ -633,9 +643,10 @@ impl fmt::Display for CreateSpendWarning {
             ),
             CreateSpendWarning::AdditionalFeeForAncestors(amt) => write!(
                 f,
-                "CPFP: an unconfirmed input was selected. The current transaction fee \
+                "{} an unconfirmed input was selected. The current transaction fee \
                 was increased by {} sat{} to make the average feerate of both the input \
                 and current transaction equal to the selected feerate.",
+                CPFP_WARNING_PREFIX,
                 amt,
                 if *amt > 1 { "s" } else { "" },
             ),

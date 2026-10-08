@@ -32,11 +32,17 @@ impl PsbtsPanel {
         }
     }
 
-    pub fn preselect(&mut self, spend_tx: SpendTx) {
+    pub fn preselect(
+        &mut self,
+        daemon: Arc<dyn Daemon + Sync + Send>,
+        spend_tx: SpendTx,
+    ) -> Task<Message> {
         let psbt_state = psbt::PsbtState::new(self.wallet.clone(), spend_tx, true);
+        let cmd = psbt_state.load(daemon);
         self.selected_tx = Some(psbt_state);
         self.warning = None;
         self.modal = None;
+        cmd
     }
 }
 

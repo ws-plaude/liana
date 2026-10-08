@@ -269,9 +269,9 @@ impl<S: SettingsTrait> App<S> {
                         .await
                         .map(|txs| txs.first().cloned())
                 }) {
-                    self.panels.psbts.preselect(spend_tx);
+                    let cmd = self.panels.psbts.preselect(self.daemon.clone(), spend_tx);
                     self.panels.current = menu;
-                    return Task::none();
+                    return cmd;
                 };
             }
             menu::Menu::SettingsPreSelected(setting) => {

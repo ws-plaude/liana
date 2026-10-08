@@ -61,6 +61,7 @@ pub fn psbt_view<'a>(
     key_aliases: &'a HashMap<Fingerprint, String>,
     labels_editing: &'a HashMap<String, form::Value<String>>,
     currently_signing: bool,
+    cpfp_warning: bool,
     warning: Option<&'a Error>,
     fiat_converter: Option<FiatAmountConverter>,
 ) -> Element<'a, Message> {
@@ -71,7 +72,10 @@ pub fn psbt_view<'a>(
         saved,
         currently_signing,
         previous: false,
-        warnings: Vec::new(),
+        warnings: cpfp_warning
+            .then(|| t!("psbt-warning-cpfp"))
+            .into_iter()
+            .collect(),
     };
     let content = tx_view(cache, detail, labels_editing, fiat_converter);
     dashboard(&Menu::PSBTs, cache, warning, content)

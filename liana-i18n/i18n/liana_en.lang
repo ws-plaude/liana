@@ -1570,6 +1570,9 @@ psbt-transaction-broadcast => "Transaction is broadcast"
 
 psbt-transaction-saved => "Transaction is saved"
 
+psbt-warning-cpfp
+=> "CPFP: an unconfirmed input is spent. The transaction fee also pays for its unconfirmed parent transaction.";;
+
 psbts-hide-confirmed => "Hide confirmed transactions"
 
 psbts-signatures-collected

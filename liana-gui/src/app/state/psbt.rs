@@ -6,7 +6,11 @@ use iced::Subscription;
 use iced::Task;
 use liana::{
     descriptors::LianaPolicy,
-    miniscript::bitcoin::{bip32::Fingerprint, psbt::Psbt, Network, Txid},
+    miniscript::bitcoin::{
+        address::NetworkUnchecked, bip32::Fingerprint, psbt::Psbt, secp256k1, Address, Network,
+        OutPoint, Txid,
+    },
+    spend::CreateSpendWarning,
 };
 use lianad::commands::CoinStatus;
 
@@ -28,7 +32,7 @@ use crate::{
         wallet::{Wallet, WalletError},
     },
     daemon::{
-        model::{LabelItem, Labelled, SpendStatus, SpendTx},
+        model::{CreateSpendResult, LabelItem, Labelled, SpendStatus, SpendTx},
         Daemon,
     },
     dir::LianaDirectory,
@@ -96,6 +100,7 @@ pub struct PsbtState {
     pub warning: Option<Error>,
     pub labels_edited: LabelsEdited,
     pub modal: Option<PsbtModal>,
+    pub cpfp_warning: bool,
 }
 
 impl PsbtState {
@@ -108,6 +113,7 @@ impl PsbtState {
             modal: None,
             tx,
             saved,
+            cpfp_warning: false,
         }
     }
 
@@ -124,11 +130,70 @@ impl PsbtState {
     }
 
     pub fn load(&self, daemon: Arc<dyn Daemon + Sync + Send>) -> Task<Message> {
-        if let Some(modal) = &self.modal {
-            modal.as_ref().load(daemon)
+        let modal = if let Some(modal) = &self.modal {
+            modal.as_ref().load(daemon.clone())
         } else {
             Task::none()
+        };
+        Task::batch([modal, self.check_cpfp(daemon)])
+    }
+
+    /// Creates the spend again, without saving it, to learn whether it still pays for unconfirmed
+    /// parents. The saved PSBT does not keep the warnings of its creation.
+    fn check_cpfp(&self, daemon: Arc<dyn Daemon + Sync + Send>) -> Task<Message> {
+        let is_recovery = !self.tx.sigs.recovery_paths().is_empty();
+        let has_unconfirmed_input = self.tx.coins.values().any(|c| c.block_height.is_none());
+        if !self.saved || is_recovery || !has_unconfirmed_input {
+            return Task::none();
         }
+        let Some(feerate_vb) = self.tx.min_feerate_vb() else {
+            return Task::none();
+        };
+        let network = self.tx.network;
+        let unsigned_tx = &self.tx.psbt.unsigned_tx;
+        let Ok(destinations) = unsigned_tx
+            .output
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| !self.tx.change_indexes.contains(i))
+            .map(|(_, txout)| {
+                Address::from_script(&txout.script_pubkey, network)
+                    .map(|addr| (addr.as_unchecked().clone(), txout.value.to_sat()))
+            })
+            .collect::<Result<HashMap<Address<NetworkUnchecked>, u64>, _>>()
+        else {
+            return Task::none();
+        };
+        let outpoints: Vec<OutPoint> = unsigned_tx
+            .input
+            .iter()
+            .map(|txin| txin.previous_output)
+            .collect();
+        // lianad only moves the change index forward past the stored one, never for index 0.
+        let change_address = self
+            .wallet
+            .main_descriptor
+            .change_descriptor()
+            .derive(0.into(), &secp256k1::Secp256k1::verification_only())
+            .address(network)
+            .as_unchecked()
+            .clone();
+        let txid = unsigned_tx.compute_txid();
+        Task::perform(
+            async move {
+                match daemon
+                    .create_spend_tx(&outpoints, &destinations, feerate_vb, Some(change_address))
+                    .await
+                {
+                    Ok(CreateSpendResult::Success { warnings, .. }) => warnings
+                        .iter()
+                        .any(|w| CreateSpendWarning::is_additional_fee_for_ancestors(w)),
+                    // Spent coins or insufficient funds: nothing to warn about.
+                    _ => false,
+                }
+            },
+            move |cpfp| Message::CpfpChecked(txid, cpfp),
+        )
     }
 
     pub fn update(
@@ -259,6 +324,11 @@ impl PsbtState {
                     return cmd;
                 }
             }
+            Message::CpfpChecked(txid, cpfp) => {
+                if txid == self.tx.psbt.unsigned_tx.compute_txid() {
+                    self.cpfp_warning = cpfp;
+                }
+            }
             Message::BroadcastModal(res) => match res {
                 Ok(conflicting_txids) => {
                     self.modal = Some(PsbtModal::Broadcast(BroadcastModal {
@@ -302,6 +372,7 @@ impl PsbtState {
             } else {
                 false
             },
+            self.cpfp_warning,
             self.warning.as_ref(),
             fiat_converter_for_wallet(&self.wallet, cache),
         );
