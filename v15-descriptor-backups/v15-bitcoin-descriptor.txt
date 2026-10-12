@@ -1,0 +1,1 @@
+tr([f25bdff6/48'/0'/0'/2']xpub6E9n8JKbzYeQRecVnWTz2MFmH6NdsogPNiGHz6yYC4Y7R16qm58FxBjXqFQsrPu3Vw4wsucfTPy9AsUHbCnW6NY3EvaAYvdAdofQDggw1CR/<0;1>/*,and_v(v:pk([6abb52a9/48'/0'/0'/2']xpub6EeNdrL8utQvNMvddSaFf3xXo31r9WjN7LiKDozVv1VYBNuT1ZmT2pkRgguWCZ9UZvsTzYdqDrk9Ag2vEQm9VzYxsv2G1guzhW1bjBvs3mL/<0;1>/*),older(65535)))#eukwu52c
