@@ -971,6 +971,74 @@ impl DaemonControl {
     /// `feerate_vb` is the target feerate for the RBF transaction (in sat/vb). If `None`, it will be set
     /// to 1 sat/vb larger than the feerate of the previous transaction, which is the minimum value allowed
     /// when using RBF.
+    /// Load the spend candidate `txid` and sanity check it: a stored PSBT our signers can
+    /// satisfy, or a transaction of our database verifiably spending our coins with
+    /// signatures committing to the whole transaction.
+    fn rbf_candidate(&self, txid: &bitcoin::Txid) -> Result<bitcoin::Transaction, CommandError> {
+        let mut db_conn = self.db.connection();
+        let mut tx_getter = DbTxGetter::new(&self.db);
+        if let Some(psbt) = db_conn.spend_tx(txid) {
+            // A PSBT our signers cannot satisfy has no reason to go through the RBF path. Ours
+            // always carry the derivations and prevout of each input, this rejects one merged
+            // from elsewhere.
+            if psbt.inputs.len() != psbt.unsigned_tx.input.len()
+                || psbt.inputs.iter().any(|psbtin| {
+                    (psbtin.bip32_derivation.is_empty() && psbtin.tap_key_origins.is_empty())
+                        || psbtin.witness_utxo.is_none()
+                })
+            {
+                return Err(CommandError::RbfError(RbfErrorInfo::UnsatisfiablePsbt));
+            }
+            return Ok(psbt.unsigned_tx);
+        }
+        let tx = db_conn
+            .coins(&[CoinStatus::Spending], &[])
+            .into_values()
+            .find(|c| c.spend_txid == Some(*txid))
+            .and_then(|_| tx_getter.get_tx(txid))
+            .ok_or(CommandError::UnknownSpend(*txid))?;
+        // We are about to rebuild a transaction we did not create ourselves. Refuse one that
+        // is not an honest spend of our coins: fully signed, and only with SIGHASH_ALL
+        // signatures so that our replacement conflicts with it whichever inputs and outputs
+        // its signatures committed to.
+        let mut resolve_prevout = |op: &bitcoin::OutPoint| {
+            tx_getter
+                .get_tx(&op.txid)
+                .and_then(|prev_tx| prev_tx.output.get(op.vout as usize).cloned())
+        };
+        if !matches!(
+            check_our_inputs(
+                &self.secp,
+                &tx,
+                &mut resolve_prevout,
+                &|_: &bitcoin::OutPoint, _: &bitcoin::Script| true,
+            ),
+            InputsCheck::Signed
+        ) {
+            return Err(CommandError::RbfError(RbfErrorInfo::DishonestSpend));
+        }
+        Ok(tx)
+    }
+
+    /// Check whether the spend candidate `txid` could be replaced: this runs the sanity
+    /// checks `rbf_psbt` runs on its candidate, without building a replacement.
+    pub fn check_rbf(&self, txid: &bitcoin::Txid) -> CheckRbfResult {
+        match self.rbf_candidate(txid) {
+            Ok(prev_tx) if prev_tx.compute_txid() == *txid => CheckRbfResult {
+                replaceable: true,
+                reason: None,
+            },
+            Ok(_) => CheckRbfResult {
+                replaceable: false,
+                reason: Some(CommandError::UnknownSpend(*txid).to_string()),
+            },
+            Err(e) => CheckRbfResult {
+                replaceable: false,
+                reason: Some(e.to_string()),
+            },
+        }
+    }
+
     pub fn rbf_psbt(
         &self,
         txid: &bitcoin::Txid,
@@ -984,48 +1052,7 @@ impl DaemonControl {
             return Err(CommandError::RbfError(RbfErrorInfo::SuperfluousFeerate));
         }
 
-        let prev_tx = if let Some(psbt) = db_conn.spend_tx(txid) {
-            // A PSBT our signers cannot satisfy has no reason to go through the RBF path. Ours
-            // always carry the derivations and prevout of each input, this rejects one merged
-            // from elsewhere.
-            if psbt.inputs.len() != psbt.unsigned_tx.input.len()
-                || psbt.inputs.iter().any(|psbtin| {
-                    (psbtin.bip32_derivation.is_empty() && psbtin.tap_key_origins.is_empty())
-                        || psbtin.witness_utxo.is_none()
-                })
-            {
-                return Err(CommandError::RbfError(RbfErrorInfo::UnsatisfiablePsbt));
-            }
-            psbt.unsigned_tx
-        } else {
-            let tx = db_conn
-                .coins(&[CoinStatus::Spending], &[])
-                .into_values()
-                .find(|c| c.spend_txid == Some(*txid))
-                .and_then(|_| tx_getter.get_tx(txid))
-                .ok_or(CommandError::UnknownSpend(*txid))?;
-            // We are about to rebuild a transaction we did not create ourselves. Refuse one that
-            // is not an honest spend of our coins: fully signed, and only with SIGHASH_ALL
-            // signatures so that our replacement conflicts with it whichever inputs and outputs
-            // its signatures committed to.
-            let mut resolve_prevout = |op: &bitcoin::OutPoint| {
-                tx_getter
-                    .get_tx(&op.txid)
-                    .and_then(|prev_tx| prev_tx.output.get(op.vout as usize).cloned())
-            };
-            if !matches!(
-                check_our_inputs(
-                    &self.secp,
-                    &tx,
-                    &mut resolve_prevout,
-                    &|_: &bitcoin::OutPoint, _: &bitcoin::Script| true,
-                ),
-                InputsCheck::Signed
-            ) {
-                return Err(CommandError::RbfError(RbfErrorInfo::DishonestSpend));
-            }
-            tx
-        };
+        let prev_tx = self.rbf_candidate(txid)?;
         // Make sure the transaction we are about to replace is the one identified by the txid
         // we were asked to replace.
         if prev_tx.compute_txid() != *txid {
@@ -1426,6 +1453,15 @@ pub struct GetInfoResult {
     pub receive_index: u32,
     /// Last index used to generate a change address
     pub change_index: u32,
+}
+
+/// The outcome of the sanity check of a spend candidate for replacement.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CheckRbfResult {
+    /// Whether the transaction can be replaced.
+    pub replaceable: bool,
+    /// Why the transaction cannot be replaced, if it cannot.
+    pub reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
