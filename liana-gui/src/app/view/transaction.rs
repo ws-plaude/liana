@@ -37,7 +37,7 @@ use crate::{
             FiatAmountConverter,
         },
     },
-    daemon::model::{Fingerprint, HistoryTransaction, SpendStatus, SpendTx, Txid},
+    daemon::model::{CheckRbfResult, Fingerprint, HistoryTransaction, SpendStatus, SpendTx, Txid},
     t,
 };
 
@@ -164,6 +164,7 @@ pub fn tx_view<'a>(
     detail: TxDetail<'a>,
     labels_editing: &'a HashMap<String, form::Value<String>>,
     fiat_converter: Option<FiatAmountConverter>,
+    rbf_check: Option<&'a Result<CheckRbfResult, String>>,
 ) -> Element<'a, Message> {
     let (txid, unsigned_tx, wallet_tx, labels, coins, label) = match &detail {
         TxDetail::Transaction(tx) => (
@@ -218,14 +219,36 @@ pub fn tx_view<'a>(
     let miner_fee = fees_row(wallet_tx.fee(), feerate, to_fiat);
     // If unconfirmed, give option to use RBF.
     // Check fee amount is some as otherwise we may be missing coins for this transaction.
-    let rbf = match &detail {
+    // If the replacement candidate fails the daemon sanity check, the actions are disabled
+    // and the reason is displayed: there is no point offering to replace a transaction
+    // which does not verifiably spend our coins.
+    let rbf: Option<Element<'_, Message>> = match &detail {
         TxDetail::Transaction(tx) => {
             (tx.time.is_none() && tx.wallet_tx.fee().is_some()).then(|| {
-                row![
-                    btn_bump_fee(Some(Message::CreateRbf(CreateRbfMessage::New(false)))),
-                    btn_cancel_transaction(Some(Message::CreateRbf(CreateRbfMessage::New(true)))),
+                let disabled_reason = match rbf_check {
+                    Some(Ok(res)) if !res.replaceable => res.reason.as_deref(),
+                    _ => None,
+                };
+                let can_replace = disabled_reason.is_none();
+                let reason_caption = disabled_reason.map(|reason| {
+                    new::caption(format!(
+                        "Bump fee and Cancel transaction are disabled: {reason}"
+                    ))
+                });
+                column![
+                    row![
+                        btn_bump_fee(
+                            can_replace.then(|| Message::CreateRbf(CreateRbfMessage::New(false)))
+                        ),
+                        btn_cancel_transaction(
+                            can_replace.then(|| Message::CreateRbf(CreateRbfMessage::New(true)))
+                        ),
+                    ]
+                    .spacing(HSpacing::M),
+                    reason_caption,
                 ]
-                .spacing(HSpacing::M)
+                .spacing(VSpacing::S)
+                .into()
             })
         }
         TxDetail::Psbt { .. } => None,

@@ -32,6 +32,9 @@ pub enum Message {
     RedirectLianaConnectLogin,
     UpdateDaemonCache(Result<DaemonCache, Error>),
     CacheUpdated,
+    /// The outcome of the sanity check of the selected transaction as a replacement
+    /// candidate. The string is the reason why it cannot be replaced, if it cannot.
+    RbfChecked(Result<CheckRbfResult, String>),
     Fiat(FiatMessage),
     UpdatePanelCache(/* is current panel */ bool),
     View(view::Message),
